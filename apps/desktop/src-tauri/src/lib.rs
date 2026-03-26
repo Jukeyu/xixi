@@ -38,6 +38,28 @@ struct LocalAction {
   label: String,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct LocalSkillDefinition {
+  id: String,
+  name: String,
+  description: String,
+  kind: String,
+  target_template: String,
+  label_template: Option<String>,
+  risk_level: Option<String>,
+  aliases: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Clone)]
+struct LocalSkillSummary {
+  id: String,
+  name: String,
+  description: String,
+  kind: String,
+  risk_level: String,
+  aliases: Vec<String>,
+}
+
 #[derive(Serialize)]
 struct CommandPlan {
   assistant_reply: String,
@@ -74,8 +96,32 @@ fn get_desktop_profile() -> DesktopProfile {
       "Only real desktop actions are exposed".into(),
       "Unsupported commands are reported instead of faked".into(),
       "Close button hides to system tray by default".into(),
+      "User-defined local skills are loaded from a writable folder".into(),
     ],
   }
+}
+
+#[tauri::command]
+fn list_local_skills() -> Vec<LocalSkillSummary> {
+  let mut summaries = load_local_skills()
+    .into_iter()
+    .map(|skill| LocalSkillSummary {
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      kind: skill.kind,
+      risk_level: skill.risk_level.unwrap_or_else(|| "low-risk".into()),
+      aliases: skill.aliases.unwrap_or_default(),
+    })
+    .collect::<Vec<_>>();
+
+  summaries.sort_by(|a, b| a.id.cmp(&b.id));
+  summaries
+}
+
+#[tauri::command]
+fn get_skills_folder_path() -> String {
+  skills_dir_path().to_string_lossy().into_owned()
 }
 
 #[tauri::command]
@@ -83,6 +129,47 @@ fn plan_user_request(request: String) -> CommandPlan {
   let trimmed = request.trim();
   let lowered = trimmed.to_lowercase();
   let compact = lowered.replace(' ', "");
+
+  if let Some((skill_key, skill_input)) = extract_skill_command(trimmed) {
+    return plan_skill_request(&skill_key, skill_input.as_deref());
+  }
+
+  if contains_any(
+    &lowered,
+    &["open skills folder", "open skill folder", "skills folder"],
+  ) || contains_any(&compact, &["打开技能目录", "打开技能文件夹"])
+  {
+    let skills_path = skills_dir_path();
+    if let Err(error) = ensure_skills_dir() {
+      return unsupported_parameter_plan(
+        "skills folder",
+        "init failed",
+        &format!("Could not initialize skills folder: {error}"),
+      );
+    }
+    return direct_plan(
+      "I can open the local skills folder right now.",
+      vec![
+        step(
+          "plan-skills-folder-1",
+          "Resolve path",
+          &format!("Skills folder path: {}", skills_path.to_string_lossy()),
+          "done",
+        ),
+        step(
+          "plan-skills-folder-2",
+          "Run folder open",
+          "Open the writable local skills directory",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "open_folder".into(),
+        target: skills_path.to_string_lossy().into_owned(),
+        label: "xixi local skills folder".into(),
+      },
+    );
+  }
 
   if contains_any(&lowered, &["open qmdownload", "qmdownload", "download folder"])
     || contains_any(&compact, &["打开qmdownload", "打开下载区", "打开d盘下载"])
@@ -455,6 +542,265 @@ fn unsupported_plan() -> CommandPlan {
     ],
     suggested_action: None,
   }
+}
+
+fn plan_skill_request(skill_key: &str, skill_input: Option<&str>) -> CommandPlan {
+  let skills = load_local_skills();
+  let normalized_key = normalize_alias(skill_key);
+
+  if skills.is_empty() {
+    return unsupported_parameter_plan(
+      "skill id",
+      skill_key,
+      "No local skills found yet. Open skills folder and add a JSON skill file.",
+    );
+  }
+
+  let Some(skill) = resolve_local_skill(&skills, &normalized_key) else {
+    let suggestions = skills
+      .iter()
+      .take(5)
+      .map(|item| item.id.as_str())
+      .collect::<Vec<_>>()
+      .join(", ");
+    return unsupported_parameter_plan(
+      "skill id",
+      skill_key,
+      &format!("Known skills: {suggestions}"),
+    );
+  };
+
+  let input = skill_input.unwrap_or("").trim();
+  let action = match render_skill_action(skill, input) {
+    Ok(action) => action,
+    Err(message) => {
+      return unsupported_parameter_plan("skill input", input, &message);
+    }
+  };
+
+  CommandPlan {
+    assistant_reply: format!(
+      "I can run skill \"{}\"{}.",
+      skill.name,
+      if input.is_empty() {
+        String::new()
+      } else {
+        format!(" with input \"{input}\"")
+      }
+    ),
+    risk_level: skill.risk_level.clone().unwrap_or_else(|| "low-risk".into()),
+    can_execute_directly: true,
+    steps: vec![
+      step(
+        "plan-skill-1",
+        "Match skill",
+        &format!("Resolved skill {} ({})", skill.name, skill.id),
+        "done",
+      ),
+      step(
+        "plan-skill-2",
+        "Render action",
+        &format!("kind={} target={}", action.kind, action.target),
+        "done",
+      ),
+      step(
+        "plan-skill-3",
+        "Run action",
+        "Execute skill-generated local action",
+        "ready",
+      ),
+    ],
+    suggested_action: Some(action),
+  }
+}
+
+fn extract_skill_command(request: &str) -> Option<(String, Option<String>)> {
+  let lowered = request.to_lowercase();
+  let prefixes = [
+    "run skill ",
+    "use skill ",
+    "execute skill ",
+    "执行技能",
+    "运行技能",
+    "技能 ",
+  ];
+
+  let remainder = prefixes.iter().find_map(|prefix| {
+    if lowered.starts_with(prefix) {
+      Some(request[prefix.len()..].trim().to_string())
+    } else {
+      None
+    }
+  })?;
+
+  if remainder.is_empty() {
+    return None;
+  }
+
+  let mut parts = remainder.splitn(2, char::is_whitespace);
+  let skill_key = parts.next()?.trim().to_string();
+  if skill_key.is_empty() {
+    return None;
+  }
+  let input = parts.next().map(|value| value.trim().to_string()).filter(|v| !v.is_empty());
+  Some((skill_key, input))
+}
+
+fn resolve_local_skill<'a>(
+  skills: &'a [LocalSkillDefinition],
+  normalized_key: &str,
+) -> Option<&'a LocalSkillDefinition> {
+  skills.iter().find(|skill| {
+    normalize_alias(&skill.id) == normalized_key
+      || skill
+        .aliases
+        .as_ref()
+        .is_some_and(|aliases| aliases.iter().any(|alias| normalize_alias(alias) == normalized_key))
+  })
+}
+
+fn render_skill_action(skill: &LocalSkillDefinition, input: &str) -> Result<LocalAction, String> {
+  let requires_input = skill.target_template.contains("{{input}}")
+    || skill
+      .label_template
+      .as_ref()
+      .is_some_and(|template| template.contains("{{input}}"));
+
+  if requires_input && input.is_empty() {
+    return Err(format!(
+      "Skill {} requires input. Use: run skill {} <your input>",
+      skill.name, skill.id
+    ));
+  }
+
+  let rendered_target = skill.target_template.replace("{{input}}", input);
+  let rendered_label = skill
+    .label_template
+    .as_ref()
+    .unwrap_or(&skill.name)
+    .replace("{{input}}", input);
+
+  let target = match skill.kind.as_str() {
+    "open_url" => normalize_site_target(&rendered_target).0,
+    "search_web" => {
+      if rendered_target.starts_with("http://") || rendered_target.starts_with("https://") {
+        rendered_target
+      } else {
+        build_search_url(&rendered_target)
+      }
+    }
+    "open_folder" | "open_app" => rendered_target,
+    other => return Err(format!("Unsupported skill kind: {other}")),
+  };
+
+  Ok(LocalAction {
+    kind: skill.kind.clone(),
+    target,
+    label: rendered_label,
+  })
+}
+
+fn skills_dir_path() -> PathBuf {
+  if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+    return Path::new(&local_app_data).join("xixi").join("skills");
+  }
+  env::temp_dir().join("xixi").join("skills")
+}
+
+fn ensure_skills_dir() -> Result<(), String> {
+  let dir = skills_dir_path();
+  fs::create_dir_all(&dir).map_err(|error| format!("Failed to create skills folder: {error}"))?;
+
+  for skill in default_local_skills() {
+    let path = dir.join(format!("{}.json", skill.id));
+    if path.exists() {
+      continue;
+    }
+    let content = serde_json::to_string_pretty(&skill)
+      .map_err(|error| format!("Failed to serialize default skill: {error}"))?;
+    fs::write(&path, content).map_err(|error| format!("Failed to write default skill: {error}"))?;
+  }
+
+  Ok(())
+}
+
+fn load_local_skills() -> Vec<LocalSkillDefinition> {
+  if let Err(error) = ensure_skills_dir() {
+    eprintln!("failed to ensure skills dir: {error}");
+    return Vec::new();
+  }
+
+  let dir = skills_dir_path();
+  let Ok(entries) = fs::read_dir(&dir) else {
+    return Vec::new();
+  };
+
+  let mut skills = Vec::new();
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+      continue;
+    }
+    let Ok(content) = fs::read_to_string(&path) else {
+      continue;
+    };
+    let Ok(skill) = serde_json::from_str::<LocalSkillDefinition>(&content) else {
+      continue;
+    };
+    if skill.id.trim().is_empty() || skill.kind.trim().is_empty() || skill.target_template.trim().is_empty()
+    {
+      continue;
+    }
+    skills.push(skill);
+  }
+
+  skills.sort_by(|a, b| a.id.cmp(&b.id));
+  skills
+}
+
+fn default_local_skills() -> Vec<LocalSkillDefinition> {
+  vec![
+    LocalSkillDefinition {
+      id: "open_github".into(),
+      name: "Open GitHub".into(),
+      description: "Open GitHub homepage.".into(),
+      kind: "open_url".into(),
+      target_template: "https://github.com".into(),
+      label_template: Some("GitHub".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["github".into(), "代码仓库".into()]),
+    },
+    LocalSkillDefinition {
+      id: "open_tradingview".into(),
+      name: "Open TradingView".into(),
+      description: "Open TradingView market chart.".into(),
+      kind: "open_url".into(),
+      target_template: "https://www.tradingview.com/chart/".into(),
+      label_template: Some("TradingView chart".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["tv".into(), "股票图表".into()]),
+    },
+    LocalSkillDefinition {
+      id: "search_stock_news".into(),
+      name: "Search Stock News".into(),
+      description: "Search stock news by keyword input.".into(),
+      kind: "search_web".into(),
+      target_template: "{{input}} stock news".into(),
+      label_template: Some("Stock news: {{input}}".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["stocknews".into(), "股票新闻".into()]),
+    },
+    LocalSkillDefinition {
+      id: "open_qmdownload".into(),
+      name: "Open QMDownload".into(),
+      description: "Open D:\\QMDownload folder.".into(),
+      kind: "open_folder".into(),
+      target_template: r"D:\QMDownload".into(),
+      label_template: Some("QMDownload folder".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["downloads".into(), "下载目录".into()]),
+    },
+  ]
 }
 
 fn unsupported_parameter_plan(topic: &str, value: &str, hint: &str) -> CommandPlan {
@@ -846,6 +1192,34 @@ mod tests {
       Some("calculator")
     );
   }
+
+  #[test]
+  fn parses_skill_command_with_input() {
+    let parsed = extract_skill_command("run skill search_stock_news tsla");
+    assert_eq!(
+      parsed,
+      Some(("search_stock_news".to_string(), Some("tsla".to_string())))
+    );
+  }
+
+  #[test]
+  fn renders_skill_template_with_input() {
+    let skill = LocalSkillDefinition {
+      id: "k1".into(),
+      name: "Search".into(),
+      description: "".into(),
+      kind: "search_web".into(),
+      target_template: "{{input}} stock news".into(),
+      label_template: Some("news {{input}}".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: None,
+    };
+
+    let action = render_skill_action(&skill, "nvda").expect("skill should render");
+    assert_eq!(action.kind, "search_web");
+    assert!(action.target.contains("nvda+stock+news"));
+    assert_eq!(action.label, "news nvda");
+  }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -859,6 +1233,10 @@ pub fn run() {
             .level(log::LevelFilter::Info)
             .build(),
         )?;
+      }
+
+      if let Err(error) = ensure_skills_dir() {
+        eprintln!("failed to initialize local skills folder: {error}");
       }
 
       let show_item = MenuItem::with_id(app, "tray_show", "Show / Restore xixi", true, None::<&str>)?;
@@ -915,6 +1293,8 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
       get_desktop_profile,
+      list_local_skills,
+      get_skills_folder_path,
       plan_user_request,
       execute_local_action,
       quit_application

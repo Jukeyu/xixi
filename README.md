@@ -34,6 +34,7 @@
 - 聊天输入与真实命令规划
 - 白名单本地动作执行（文件夹、网站、应用启动等）
 - 参数化指令（例如 `open site <domain>`、`search web <query>`）
+- 本地技能系统（`run skill <id> [input]`，支持自己写技能 JSON）
 - 托盘驻留（关闭窗口隐藏到托盘）
 - 结构化执行日志与失败重试
 - 明确拒绝未实现指令（不做“伪成功”）
@@ -94,6 +95,18 @@ cd apps/desktop
 npm run lint
 npm run test:smoke
 ```
+
+## 自定义技能（你可以自己写）
+
+`xixi` 会从本地技能目录加载 JSON 技能文件，你可以自行扩展简单电脑操作。
+
+- 技能目录（Windows）：`%LOCALAPPDATA%\xixi\skills`
+- 命令格式：`run skill <skill_id> [input]`
+- 示例：`run skill open_github`、`run skill search_stock_news tsla`
+
+技能格式与示例见：
+
+- `docs/skills/local-skills.md`
 
 ## Repo Structure
 

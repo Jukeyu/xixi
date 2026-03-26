@@ -33,6 +33,7 @@ This document describes the current architecture of the runnable desktop build.
 - weather data fetch and display
 - structured action logs in local storage
 - retry flow for failed actions
+- local skill list display and run-skill interaction
 - desktop window controls (minimize, maximize, close)
 
 `apps/desktop/src/App.css` and `src/index.css` provide:
@@ -50,6 +51,7 @@ This document describes the current architecture of the runnable desktop build.
 - tray lifecycle (show/hide/quit)
 - close-to-tray behavior
 - JSONL execution logging to `%LOCALAPPDATA%\\xixi\\action-log.jsonl`
+- local skill loading from `%LOCALAPPDATA%\\xixi\\skills`
 - executable adapters:
   - folder open
   - URL open and web search URL launch
@@ -59,6 +61,7 @@ This document describes the current architecture of the runnable desktop build.
   - `search web <query>`
   - `open folder <alias>`
   - `open app <alias>`
+  - `run skill <skill_id> [input]`
 - explicit unsupported-command handling
 
 ## Safety Model (Current)

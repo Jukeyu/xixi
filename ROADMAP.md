@@ -25,7 +25,6 @@
 - [ ] Model API settings panel (provider, key, model selection)
 - [ ] Permission profile UI for users
 - [ ] Accessibility improvements for seniors and low-vision users
-- [ ] Voice input prototype (push-to-talk + transcript)
 - [ ] Better multilingual command support
 
 ## Phase 4 - Skills and Specialist Agents

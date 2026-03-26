@@ -227,6 +227,52 @@
   flex: 1;
 }
 
+.skill-folder-path {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-secondary);
+  border: 1px solid var(--panel-border);
+  color: var(--muted);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.skill-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.skill-card {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-secondary);
+  border: 1px solid var(--panel-border);
+  display: grid;
+  gap: 8px;
+}
+
+.skill-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skill-card__head span,
+.skill-card__meta {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.skill-card p {
+  margin: 0;
+  color: var(--foreground-soft);
+}
+
 .supported-item,
 .action-card {
   padding: 13px 14px;

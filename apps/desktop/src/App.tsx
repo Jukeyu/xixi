@@ -63,6 +63,15 @@ type ActionLogEntry = {
   executedAtMs: number
 }
 
+type LocalSkillSummary = {
+  id: string
+  name: string
+  description: string
+  kind: string
+  risk_level: string
+  aliases: string[]
+}
+
 type ThemeMode = 'light' | 'dark'
 
 type SettingsState = {
@@ -172,6 +181,8 @@ const supportedCommands = [
   'Open folder desktop',
   'Open site <domain>',
   'Search web <query>',
+  'Run skill <id> [input]',
+  'Open skills folder',
 ]
 
 function makeId(prefix: string) {
@@ -260,6 +271,8 @@ function App() {
   })
   const [actionLogs, setActionLogs] = useState<ActionLogEntry[]>(() => readStoredActionLogs())
   const [lastFailedAction, setLastFailedAction] = useState<LocalAction | null>(null)
+  const [localSkills, setLocalSkills] = useState<LocalSkillSummary[]>([])
+  const [skillsFolderPath, setSkillsFolderPath] = useState('')
   const [weatherReloadTick, setWeatherReloadTick] = useState(0)
 
   const windowApi = useMemo(() => (isDesktop ? getCurrentWindow() : null), [isDesktop])
@@ -272,6 +285,20 @@ function App() {
     invoke<DesktopProfile>('get_desktop_profile')
       .then((profile) => setDesktopProfile(profile))
       .catch(() => setDesktopProfile(null))
+  }, [isDesktop])
+
+  useEffect(() => {
+    if (!isDesktop) {
+      return
+    }
+
+    invoke<LocalSkillSummary[]>('list_local_skills')
+      .then((skills) => setLocalSkills(skills))
+      .catch(() => setLocalSkills([]))
+
+    invoke<string>('get_skills_folder_path')
+      .then((path) => setSkillsFolderPath(path))
+      .catch(() => setSkillsFolderPath(''))
   }, [isDesktop])
 
   useEffect(() => {
@@ -613,6 +640,24 @@ function App() {
     setActionLogs([])
   }
 
+  const refreshLocalSkills = async () => {
+    if (!isDesktop) {
+      return
+    }
+    try {
+      const skills = await invoke<LocalSkillSummary[]>('list_local_skills')
+      setLocalSkills(skills)
+      appendAssistantMessage('Local skills refreshed.', `${skills.length} skill(s) loaded`)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unknown skills refresh error'
+      appendAssistantMessage('Failed to refresh local skills.', detail)
+    }
+  }
+
+  const runSkillById = async (skillId: string) => {
+    await runRequest(`run skill ${skillId}`)
+  }
+
   const onContextMenu: React.MouseEventHandler<HTMLDivElement> = (event) => {
     event.preventDefault()
     setContextMenu({
@@ -717,6 +762,43 @@ function App() {
             ))}
           </div>
         </section>
+
+        <section className="sidebar-section">
+          <div className="section-title">Local skills</div>
+          <div className="action-tools">
+            <button type="button" className="ghost-button" onClick={() => void refreshLocalSkills()}>
+              Refresh
+            </button>
+            <button type="button" className="ghost-button" onClick={() => void runRequest('open skills folder')}>
+              Open folder
+            </button>
+          </div>
+          {skillsFolderPath ? (
+            <div className="skill-folder-path">{skillsFolderPath}</div>
+          ) : null}
+          <div className="skill-list">
+            {localSkills.length === 0 ? (
+              <article className="skill-card">
+                <strong>No local skills loaded</strong>
+                <p>Add skill JSON files in your local skills folder, then click Refresh.</p>
+              </article>
+            ) : (
+              localSkills.slice(0, 6).map((skill) => (
+                <article key={skill.id} className="skill-card">
+                  <div className="skill-card__head">
+                    <strong>{skill.name}</strong>
+                    <span>{skill.risk_level}</span>
+                  </div>
+                  <p>{skill.description}</p>
+                  <div className="skill-card__meta">{skill.id}</div>
+                  <button type="button" className="ghost-button" onClick={() => void runSkillById(skill.id)}>
+                    Run skill
+                  </button>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
       </aside>
 
       <main className={`workspace ${settings.compactMode ? 'is-compact' : ''}`}>
@@ -776,13 +858,13 @@ function App() {
 
             <footer className="composer">
               <div className="composer__hint">
-                I only execute commands that are actually wired. Everything else stays explicit.
+                I only execute commands that are actually wired. Try: run skill open_github
               </div>
               <div className="composer__row">
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Try: open site openai.com / open folder downloads / open app calculator"
+                  placeholder="Try: run skill open_github / open site openai.com / open folder downloads"
                 />
                 <button
                   type="button"
@@ -1047,6 +1129,12 @@ function App() {
           </button>
           <button type="button" onClick={refreshWeather}>
             Refresh weather
+          </button>
+          <button type="button" onClick={() => void runRequest('open skills folder')}>
+            Open skills folder
+          </button>
+          <button type="button" onClick={() => void refreshLocalSkills()}>
+            Refresh skills
           </button>
           <button
             type="button"
