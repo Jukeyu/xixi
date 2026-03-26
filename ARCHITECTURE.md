@@ -52,6 +52,7 @@ This document describes the current architecture of the runnable desktop build.
 - close-to-tray behavior
 - JSONL execution logging to `%LOCALAPPDATA%\\xixi\\action-log.jsonl`
 - local skill loading from `%LOCALAPPDATA%\\xixi\\skills`
+- local script skills from `%LOCALAPPDATA%\\xixi\\skills\\scripts`
 - executable adapters:
   - folder open
   - URL open and web search URL launch
@@ -72,6 +73,7 @@ This document describes the current architecture of the runnable desktop build.
 - Unsupported requests are visibly reported, not silently ignored.
 - Failed actions return explicit recovery tips.
 - Normal close hides the app to tray; explicit quit is a separate path.
+- `run_script` skills are constrained to local skills scripts folder and allowed extensions.
 
 ## Test Model
 

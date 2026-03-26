@@ -101,8 +101,9 @@ npm run test:smoke
 `xixi` 会从本地技能目录加载 JSON 技能文件，你可以自行扩展简单电脑操作。
 
 - 技能目录（Windows）：`%LOCALAPPDATA%\xixi\skills`
+- 脚本目录（代码技能）：`%LOCALAPPDATA%\xixi\skills\scripts`
 - 命令格式：`run skill <skill_id> [input]`
-- 示例：`run skill open_github`、`run skill search_stock_news tsla`
+- 示例：`run skill open_github`、`run skill search_stock_news tsla`、`run skill screen_watch_stub stock`
 
 技能格式与示例见：
 

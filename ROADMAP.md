@@ -17,6 +17,7 @@
 - [x] Better action result feedback in chat history
 - [x] Structured action logs for debugging
 - [x] Recovery flows for failed actions
+- [x] Local skill runner with JSON + script adapters
 
 ## Phase 3 - Safety + UX Hardening
 

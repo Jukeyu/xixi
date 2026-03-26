@@ -60,6 +60,12 @@ struct LocalSkillSummary {
   aliases: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct ScriptTargetPayload {
+  script: String,
+  input: Option<String>,
+}
+
 #[derive(Serialize)]
 struct CommandPlan {
   assistant_reply: String,
@@ -109,8 +115,10 @@ fn list_local_skills() -> Vec<LocalSkillSummary> {
       id: skill.id,
       name: skill.name,
       description: skill.description,
-      kind: skill.kind,
-      risk_level: skill.risk_level.unwrap_or_else(|| "low-risk".into()),
+      kind: skill.kind.clone(),
+      risk_level: skill
+        .risk_level
+        .unwrap_or_else(|| default_risk_for_kind(&skill.kind).into()),
       aliases: skill.aliases.unwrap_or_default(),
     })
     .collect::<Vec<_>>();
@@ -471,6 +479,7 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
     "open_url" => open_url(&action.target, &action.label),
     "search_web" => open_url(&action.target, &action.label),
     "open_app" => open_app(&action.target, &action.label),
+    "run_script" => run_script(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
   };
 
@@ -588,7 +597,10 @@ fn plan_skill_request(skill_key: &str, skill_input: Option<&str>) -> CommandPlan
         format!(" with input \"{input}\"")
       }
     ),
-    risk_level: skill.risk_level.clone().unwrap_or_else(|| "low-risk".into()),
+    risk_level: skill
+      .risk_level
+      .clone()
+      .unwrap_or_else(|| default_risk_for_kind(&skill.kind).into()),
     can_execute_directly: true,
     steps: vec![
       step(
@@ -690,6 +702,18 @@ fn render_skill_action(skill: &LocalSkillDefinition, input: &str) -> Result<Loca
       }
     }
     "open_folder" | "open_app" => rendered_target,
+    "run_script" => {
+      let payload = ScriptTargetPayload {
+        script: rendered_target,
+        input: if input.is_empty() {
+          None
+        } else {
+          Some(input.to_string())
+        },
+      };
+      serde_json::to_string(&payload)
+        .map_err(|error| format!("Failed to build script payload: {error}"))?
+    }
     other => return Err(format!("Unsupported skill kind: {other}")),
   };
 
@@ -710,6 +734,9 @@ fn skills_dir_path() -> PathBuf {
 fn ensure_skills_dir() -> Result<(), String> {
   let dir = skills_dir_path();
   fs::create_dir_all(&dir).map_err(|error| format!("Failed to create skills folder: {error}"))?;
+  let scripts_dir = skills_scripts_dir();
+  fs::create_dir_all(&scripts_dir)
+    .map_err(|error| format!("Failed to create skills scripts folder: {error}"))?;
 
   for skill in default_local_skills() {
     let path = dir.join(format!("{}.json", skill.id));
@@ -719,6 +746,20 @@ fn ensure_skills_dir() -> Result<(), String> {
     let content = serde_json::to_string_pretty(&skill)
       .map_err(|error| format!("Failed to serialize default skill: {error}"))?;
     fs::write(&path, content).map_err(|error| format!("Failed to write default skill: {error}"))?;
+  }
+
+  let sample_script_path = scripts_dir.join("sample_screen_watch.py");
+  if !sample_script_path.exists() {
+    let sample = r#"import datetime
+import sys
+
+keyword = sys.argv[1] if len(sys.argv) > 1 else "default"
+now = datetime.datetime.now().isoformat()
+print(f"[{now}] xixi sample screen-watch stub running with keyword={keyword}")
+print("Replace this script with your own OCR / screen detection logic.")
+"#;
+    fs::write(&sample_script_path, sample)
+      .map_err(|error| format!("Failed to write sample script: {error}"))?;
   }
 
   Ok(())
@@ -800,6 +841,16 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       risk_level: Some("low-risk".into()),
       aliases: Some(vec!["downloads".into(), "下载目录".into()]),
     },
+    LocalSkillDefinition {
+      id: "screen_watch_stub".into(),
+      name: "Screen Watch Stub".into(),
+      description: "Run a local python stub script for screen-watch workflow.".into(),
+      kind: "run_script".into(),
+      target_template: "sample_screen_watch.py".into(),
+      label_template: Some("Screen Watch Stub".into()),
+      risk_level: Some("medium-risk".into()),
+      aliases: Some(vec!["watchscreen".into(), "盯屏".into(), "屏幕监控".into()]),
+    },
   ]
 }
 
@@ -874,6 +925,53 @@ fn open_app(target: &str, label: &str) -> Result<(String, Vec<String>), String> 
   ))
 }
 
+fn run_script(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let payload = parse_script_target(target);
+  let script_path = resolve_skill_script_path(&payload.script)?;
+  let extension = script_path
+    .extension()
+    .and_then(|ext| ext.to_str())
+    .unwrap_or_default()
+    .to_lowercase();
+
+  let mut command = match extension.as_str() {
+    "py" => {
+      let mut cmd = Command::new("python");
+      cmd.arg(&script_path);
+      cmd
+    }
+    "ps1" => {
+      let mut cmd = Command::new("powershell");
+      cmd.args(["-ExecutionPolicy", "Bypass", "-File"]);
+      cmd.arg(&script_path);
+      cmd
+    }
+    _ => {
+      return Err("Only .py and .ps1 scripts are supported for run_script skills.".into());
+    }
+  };
+
+  if let Some(input) = payload.input.as_ref().filter(|value| !value.trim().is_empty()) {
+    command.arg(input);
+  }
+
+  let child = command
+    .spawn()
+    .map_err(|error| format!("Failed to start script: {error}"))?;
+
+  let mut details = vec![
+    format!("script={}", script_path.to_string_lossy()),
+    format!("pid={}", child.id()),
+    format!("runner={extension}"),
+  ];
+
+  if let Some(input) = payload.input {
+    details.push(format!("input={input}"));
+  }
+
+  Ok((format!("Started script skill {label}."), details))
+}
+
 fn try_spawn_any(candidates: &[&str]) -> bool {
   candidates
     .iter()
@@ -938,6 +1036,54 @@ fn normalize_alias(value: &str) -> String {
     .replace(' ', "")
     .replace('_', "")
     .replace('-', "")
+}
+
+fn default_risk_for_kind(kind: &str) -> &'static str {
+  match kind {
+    "run_script" => "medium-risk",
+    _ => "low-risk",
+  }
+}
+
+fn parse_script_target(target: &str) -> ScriptTargetPayload {
+  if let Ok(payload) = serde_json::from_str::<ScriptTargetPayload>(target) {
+    return payload;
+  }
+
+  ScriptTargetPayload {
+    script: target.to_string(),
+    input: None,
+  }
+}
+
+fn skills_scripts_dir() -> PathBuf {
+  skills_dir_path().join("scripts")
+}
+
+fn resolve_skill_script_path(script_value: &str) -> Result<PathBuf, String> {
+  if script_value.trim().is_empty() {
+    return Err("Script value is empty.".into());
+  }
+
+  let script_name = script_value.replace('\\', "/");
+  if script_name.contains("..") {
+    return Err("Script path traversal is not allowed.".into());
+  }
+
+  let scripts_dir = skills_scripts_dir();
+  let scripts_dir_canonical = scripts_dir
+    .canonicalize()
+    .map_err(|error| format!("Cannot access scripts folder: {error}"))?;
+  let candidate = scripts_dir.join(script_name);
+  let candidate_canonical = candidate
+    .canonicalize()
+    .map_err(|error| format!("Cannot access script file: {error}"))?;
+
+  if !candidate_canonical.starts_with(&scripts_dir_canonical) {
+    return Err("Script must stay inside local skills scripts folder.".into());
+  }
+
+  Ok(candidate_canonical)
 }
 
 fn resolve_named_folder(query: &str) -> Option<(String, String)> {
@@ -1012,6 +1158,11 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
     "open_url" | "search_web" => vec![
       "Check whether a default browser is configured on this Windows profile.".into(),
       "Try using a full URL like https://example.com.".into(),
+    ],
+    "run_script" => vec![
+      "Check script file exists under %LOCALAPPDATA%\\xixi\\skills\\scripts.".into(),
+      "Only .py and .ps1 scripts are currently supported.".into(),
+      "For Python scripts, ensure python is installed and available in PATH.".into(),
     ],
     _ => vec!["Retry later or use a simpler supported command phrase.".into()],
   }
@@ -1219,6 +1370,28 @@ mod tests {
     assert_eq!(action.kind, "search_web");
     assert!(action.target.contains("nvda+stock+news"));
     assert_eq!(action.label, "news nvda");
+  }
+
+  #[test]
+  fn renders_run_script_skill_payload() {
+    let skill = LocalSkillDefinition {
+      id: "screen_watch_stub".into(),
+      name: "Screen Watch Stub".into(),
+      description: "".into(),
+      kind: "run_script".into(),
+      target_template: "sample_screen_watch.py".into(),
+      label_template: Some("Screen Watch Stub".into()),
+      risk_level: Some("medium-risk".into()),
+      aliases: None,
+    };
+
+    let action = render_skill_action(&skill, "stock").expect("skill should render");
+    assert_eq!(action.kind, "run_script");
+
+    let payload: ScriptTargetPayload =
+      serde_json::from_str(&action.target).expect("payload must be valid json");
+    assert_eq!(payload.script, "sample_screen_watch.py");
+    assert_eq!(payload.input, Some("stock".to_string()));
   }
 }
 

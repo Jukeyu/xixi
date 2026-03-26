@@ -162,6 +162,7 @@ const quickActions = [
   'Open folder downloads',
   'Open site github.com',
   'Search web Tauri tray icon',
+  'Run skill screen_watch_stub stock',
   'Open app calculator',
   'Open xixi folder',
 ]
