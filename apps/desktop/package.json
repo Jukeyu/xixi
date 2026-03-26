@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "check": "tsc --noEmit",
     "lint": "eslint .",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:smoke": "npm run check && npm run build && npm run test:rust",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

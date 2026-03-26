@@ -57,8 +57,11 @@ fn get_desktop_profile() -> DesktopProfile {
 #[tauri::command]
 fn plan_user_request(request: String) -> CommandPlan {
   let lowered = request.to_lowercase();
+  let compact = lowered.replace(' ', "");
 
-  if contains_any(&lowered, &["open qmdownload", "qmdownload", "download folder"]) {
+  if contains_any(&lowered, &["open qmdownload", "qmdownload", "download folder"])
+    || contains_any(&compact, &["打开qmdownload", "打开下载区", "打开d盘下载"])
+  {
     return direct_plan(
       "I can open the QMDownload folder right now.",
       vec![
@@ -73,7 +76,9 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
-  if contains_any(&lowered, &["open xixi folder", "open xixi project", "xixi folder"]) {
+  if contains_any(&lowered, &["open xixi folder", "open xixi project", "xixi folder"])
+    || contains_any(&compact, &["打开xixi目录", "打开xixi项目", "打开xixi文件夹"])
+  {
     return direct_plan(
       "I can open the xixi project folder right now.",
       vec![
@@ -88,7 +93,9 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
-  if contains_any(&lowered, &["open github", "github"]) {
+  if contains_any(&lowered, &["open github", "github"])
+    || contains_any(&compact, &["打开github", "去github", "打开代码仓库"])
+  {
     return direct_plan(
       "I can open GitHub in your default browser right now.",
       vec![
@@ -103,7 +110,9 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
-  if contains_any(&lowered, &["open weather", "weather"]) {
+  if contains_any(&lowered, &["open weather", "weather"])
+    || contains_any(&compact, &["查看天气", "打开天气", "今天天气"])
+  {
     return direct_plan(
       "I can open a weather search page right now.",
       vec![
@@ -123,7 +132,9 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
-  if contains_any(&lowered, &["open chrome", "chrome"]) {
+  if contains_any(&lowered, &["open chrome", "chrome"])
+    || contains_any(&compact, &["打开chrome", "打开谷歌浏览器"])
+  {
     return direct_plan(
       "I can try to launch Google Chrome right now.",
       vec![
@@ -138,7 +149,9 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
-  if contains_any(&lowered, &["open edge", "edge"]) {
+  if contains_any(&lowered, &["open edge", "edge"])
+    || contains_any(&compact, &["打开edge", "打开微软浏览器"])
+  {
     return direct_plan(
       "I can try to launch Microsoft Edge right now.",
       vec![
@@ -153,7 +166,9 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
-  if contains_any(&lowered, &["open notepad", "notepad"]) {
+  if contains_any(&lowered, &["open notepad", "notepad"])
+    || contains_any(&compact, &["打开记事本", "打开notepad"])
+  {
     return direct_plan(
       "I can launch Notepad right now.",
       vec![
@@ -168,7 +183,9 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
-  if contains_any(&lowered, &["open explorer", "file explorer", "explorer"]) {
+  if contains_any(&lowered, &["open explorer", "file explorer", "explorer"])
+    || contains_any(&compact, &["打开资源管理器", "打开文件管理器", "打开explorer"])
+  {
     return direct_plan(
       "I can launch File Explorer right now.",
       vec![
@@ -298,6 +315,57 @@ fn step(id: &str, title: &str, detail: &str, state: &str) -> ActionItem {
     title: title.into(),
     detail: detail.into(),
     state: state.into(),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn plans_english_github_request() {
+    let plan = plan_user_request("Open GitHub".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("open_url")
+    );
+  }
+
+  #[test]
+  fn plans_chinese_github_request() {
+    let plan = plan_user_request("帮我打开github".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("open_url")
+    );
+  }
+
+  #[test]
+  fn plans_chinese_notepad_request() {
+    let plan = plan_user_request("打开记事本".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("open_app")
+    );
+    assert_eq!(
+      plan.suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("notepad")
+    );
+  }
+
+  #[test]
+  fn rejects_unknown_request_honestly() {
+    let plan = plan_user_request("delete all files".to_string());
+    assert!(!plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "not-implemented");
+    assert!(plan.suggested_action.is_none());
   }
 }
 

@@ -1,103 +1,144 @@
-# xixi
+# xixi / 晰晰
 
-> xixi（中文名：晰晰）是一款面向代码小白的 AI 自动化桌面助手。
+`xixi` is an open-source desktop AI assistant for non-coders.
 
-xixi is an open-source desktop AI pet for people who do not know how to code.
+This project is building a real desktop companion that can chat, explain actions clearly, and run safe local automation on Windows.
+It is not a toy chat mockup: every supported command in the UI is backed by executable code.
 
-It lives on the desktop as a small orange cat companion. Double-clicking xixi opens a maximized chat window like GPT or Doubao. You talk to it in natural language. xixi understands what you mean, explains what it is doing in simple language, and helps operate your computer through safe local automation.
+## Why This Project Matters
 
-## Why This Project Exists
+Most AI apps can talk but cannot operate a real personal computer.
+Most automation tools can operate a computer but are hard for beginners.
 
-Most AI tools are impressive in conversation but weak at actually getting things done on a real personal computer.
+`xixi` combines both:
 
-Most automation tools are powerful but difficult for non-coders to learn.
+- a desktop-first AI chat workspace
+- transparent action planning
+- safe local command execution
+- settings that normal users can understand
+- a contributor-friendly architecture for skills and specialist agents
 
-xixi exists to combine both worlds:
+## Current Real Capabilities (March 26, 2026)
 
-- a friendly desktop AI companion
-- a modern chat interface
-- natural-language local automation
-- visible task progress and self-talk
-- a path for non-coders to actually use AI automation
+The current build can:
 
-## Core Product Vision
+- run as a real Windows desktop app (Tauri)
+- minimize / maximize / close via real desktop window APIs
+- switch light/dark theme and persist settings
+- show live weather data from Open-Meteo
+- parse and execute supported desktop commands
+- reject unsupported commands honestly (no fake success)
 
-xixi should feel like a living desktop companion, not a hidden script runner.
+Supported command examples today:
 
-Phase 1 focuses on:
+- `Open QMDownload`
+- `Open xixi folder`
+- `Open GitHub`
+- `Open weather`
+- `Open Chrome`
+- `Open Edge`
+- `Open Notepad`
+- `Open Explorer`
 
-- a floating orange-cat pet on the desktop
-- a maximized AI chat window
-- multiple personas
-- small tasks that execute directly
-- larger tasks that ask first
-- browser actions, app launching, and D-drive workflows
-- plugin and specialist extension points
+Chinese phrase support is also wired for common variants like:
 
-## Example Requests
+- `打开 github`
+- `打开记事本`
+- `打开资源管理器`
 
-Users should be able to say things like:
+## Product Direction
 
-- Open QQ
-- Open Chrome and search for today's weather
-- Open a folder on D drive
-- Help me organize files
-- Find and play a song
-- Remind me later if the wind is strong today
+Goal: build a desktop AI pet that feels alive and useful, not gimmicky.
 
-## Who This Is For
+Core direction:
 
-- non-coders who want real AI automation
-- curious learners who want an understandable desktop AI
-- contributors interested in desktop AI UX and agentic systems
+- pet presence + chat workspace
+- natural language to desktop actions
+- clear safety behavior (small tasks direct, risky tasks confirm)
+- plug-in points for skills and specialist agents
+- beginner-friendly UX and explanations
 
-## Why Contributors Might Care
+## Quick Start
 
-xixi touches several interesting areas at once:
+```bash
+cd apps/desktop
+npm install
+npm run tauri:dev
+```
 
-- desktop app architecture
-- AI chat experience
-- local computer automation
-- model routing
-- plugin systems
-- desktop pet UX
-- trust and safety for non-technical users
+Build packages:
 
-If you work on Tauri, React, automation, local AI tooling, model orchestration, desktop UX, Live2D, 2D or 3D pet systems, or open-source AI assistants, this project should be interesting to you.
+```bash
+cd apps/desktop
+npm run tauri:build
+```
 
-## Open Source Direction
+## Publish to GitHub
 
-This project is being built in the open and explicitly welcomes help from stronger developers.
+Once `gh auth login` is completed on this machine, publish with:
 
-The founder direction is intentionally non-coder-first:
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-github.ps1 -RepoName xixi
+```
 
-- the product must stay understandable
-- the setup must stay approachable
-- the interface must explain what it is doing
-- the automation must feel safe
+This script will:
 
-## Current Status
+- create the GitHub repository (if `origin` does not exist)
+- set `origin`
+- push `main`
 
-This repository is in active project setup and phase-one architecture work.
+## Test Workflow
 
-See:
+Local smoke test:
 
-- `docs/design/2026-03-26-xixi-phase-1-design.md`
-- `docs/plans/2026-03-26-xixi-phase-1-implementation-plan.md`
+```bash
+cd apps/desktop
+npm run test:smoke
+```
 
-## Long-Term Goal
+This runs:
 
-Build a desktop AI pet that can:
+- TypeScript checks
+- frontend build
+- Rust unit tests
 
-- chat naturally
-- operate the computer safely
-- switch personas
-- learn from useful public resources
-- grow through installable skills and specialist agents
+CI is configured in:
 
-## Name
+- `.github/workflows/ci.yml`
 
-- English: `xixi`
-- Chinese: `晰晰`
+## Repo Structure
 
-The character concept is a small orange cat with visible presence, self-talk, busy states, and a helpful personality layer on top of a serious automation core.
+- `apps/desktop`: Tauri + React desktop app
+- `docs/design`: design records
+- `docs/plans`: implementation plans
+- `.github/workflows`: CI pipeline
+- `ARCHITECTURE.md`: runtime architecture overview
+- `CONTRIBUTING.md`: contribution workflow
+- `ROADMAP.md`: staged project milestones
+
+## Contributing
+
+This project is intentionally open for collaboration.
+If you are strong in any of these areas, your help is high impact:
+
+- desktop automation
+- LLM command planning
+- Tauri and Rust systems work
+- React UX for non-technical users
+- skill/plugin architecture
+- QA and safety validation
+
+Good first contribution directions:
+
+1. Add one new real desktop action end-to-end (planner + executor + UI trace).
+2. Expand multilingual intent parsing while keeping strict execution honesty.
+3. Improve accessibility and readability for low-vision users.
+4. Build skill registry and external skill packaging flow.
+5. Add deterministic test cases for edge command phrasing.
+
+## Open Collaboration Call
+
+If you want to help build a practical AI desktop assistant that beginners can actually use, join this project.
+
+This is not about flashy demos.
+This is about shipping a reliable, understandable, open desktop AI system together.

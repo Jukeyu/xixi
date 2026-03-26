@@ -1,0 +1,43 @@
+# xixi Roadmap
+
+## Phase 1 - Runnable Core (in progress)
+
+- [x] Desktop app shell (Tauri + React)
+- [x] Real window controls
+- [x] Command planner + executor baseline
+- [x] Honest unsupported-command handling
+- [x] Theme/settings persistence
+- [x] Live weather card
+- [x] Local smoke test and CI baseline
+
+## Phase 2 - Broader Real Actions
+
+- [ ] Add more safe app/file/browser actions
+- [ ] Parameterized actions (for example `open <site>`)
+- [ ] Better action result feedback in chat history
+- [ ] Structured action logs for debugging
+- [ ] Recovery flows for failed actions
+
+## Phase 3 - Safety + UX Hardening
+
+- [ ] Risk classification for command categories
+- [ ] Confirm-before-run on medium/high-risk operations
+- [ ] Permission profile UI for users
+- [ ] Accessibility improvements for low-vision users
+- [ ] Better multilingual command support
+
+## Phase 4 - Skills and Specialist Agents
+
+- [ ] Skill registry schema
+- [ ] Install/uninstall skill management UI
+- [ ] Specialist routing interface
+- [ ] Skill execution observability panel
+- [ ] Contributor templates for new skills
+
+## Phase 5 - Community and Release
+
+- [ ] Public issue templates and labels
+- [ ] Contribution playbooks by area
+- [ ] Release notes automation
+- [ ] Installer and update strategy
+- [ ] Public beta feedback loop

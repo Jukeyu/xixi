@@ -1,0 +1,38 @@
+name: xixi-ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  desktop-smoke:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: apps/desktop
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type and frontend build
+        run: npm run check; npm run build
+
+      - name: Rust tests
+        run: npm run test:rust

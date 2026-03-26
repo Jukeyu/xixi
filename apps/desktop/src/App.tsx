@@ -181,7 +181,7 @@ function App() {
   const [actionQueue, setActionQueue] = useState(initialQueue)
   const [draft, setDraft] = useState('Open GitHub')
   const [isBusy, setIsBusy] = useState(false)
-  const [isMaximized, setIsMaximized] = useState(true)
+  const [isMaximized, setIsMaximized] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settings, setSettings] = useState<SettingsState>(() => readStoredSettings())
   const [weather, setWeather] = useState<WeatherState>({
@@ -195,6 +195,7 @@ function App() {
     x: 0,
     y: 0,
   })
+  const [weatherReloadTick, setWeatherReloadTick] = useState(0)
 
   const windowApi = useMemo(() => (isDesktop ? getCurrentWindow() : null), [isDesktop])
 
@@ -207,6 +208,17 @@ function App() {
       .then((profile) => setDesktopProfile(profile))
       .catch(() => setDesktopProfile(null))
   }, [isDesktop])
+
+  useEffect(() => {
+    if (!windowApi) {
+      return
+    }
+
+    windowApi
+      .isMaximized()
+      .then((value) => setIsMaximized(value))
+      .catch(() => setIsMaximized(false))
+  }, [windowApi])
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme
@@ -290,6 +302,7 @@ function App() {
     settings.weatherLatitude,
     settings.weatherLongitude,
     settings.weatherLocationName,
+    weatherReloadTick,
   ])
 
   useEffect(() => {
@@ -407,7 +420,7 @@ function App() {
   }
 
   const refreshWeather = () => {
-    setSettings((current) => ({ ...current }))
+    setWeatherReloadTick((value) => value + 1)
   }
 
   const onContextMenu: React.MouseEventHandler<HTMLDivElement> = (event) => {

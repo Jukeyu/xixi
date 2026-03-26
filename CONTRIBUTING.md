@@ -1,0 +1,47 @@
+# Contributing to xixi
+
+Thanks for helping build `xixi`.
+
+The project values real, testable progress over demo-only features.
+If a behavior cannot be executed or verified, we do not present it as completed.
+
+## Principles
+
+- Keep execution honest: no fake success states.
+- Prefer small, verifiable changes.
+- Add or update tests whenever behavior changes.
+- Keep user-facing text clear for beginners.
+
+## Local Setup
+
+```bash
+cd apps/desktop
+npm install
+npm run tauri:dev
+```
+
+## Validation Before PR
+
+Run this before opening a pull request:
+
+```bash
+cd apps/desktop
+npm run test:smoke
+```
+
+## What to Work On
+
+High-value contribution themes:
+
+1. New desktop executors
+2. Better natural-language command mapping
+3. Safety and confirmation policies
+4. Skill and agent extension system
+5. UI readability and accessibility
+
+## PR Expectations
+
+- Describe what is now real and executable.
+- List exact commands used for verification.
+- Include screenshots for UI changes.
+- Mention any known limits or follow-up work.
