@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import './App.css'
 
@@ -14,7 +14,7 @@ type ActionItem = {
   id: string
   title: string
   detail: string
-  state: 'ready' | 'running' | 'waiting'
+  state: 'ready' | 'running' | 'waiting' | 'done' | 'error'
 }
 
 type DesktopProfile = {
@@ -24,48 +24,62 @@ type DesktopProfile = {
   notes: string[]
 }
 
-const messages: ChatMessage[] = [
+type LocalAction = {
+  kind: string
+  target: string
+  label: string
+}
+
+type CommandPlan = {
+  assistant_reply: string
+  risk_level: string
+  can_execute_directly: boolean
+  steps: ActionItem[]
+  suggested_action?: LocalAction | null
+}
+
+type ActionExecutionResult = {
+  ok: boolean
+  summary: string
+  details: string[]
+}
+
+const initialMessages: ChatMessage[] = [
   {
     id: 'm1',
     role: 'assistant',
     author: 'xixi',
     content:
-      '欢迎回来。我已经准备好用自然语言帮你操作电脑、整理任务和解释每一步在做什么。',
+      '欢迎回来。我已经准备好用自然语言帮你操作电脑、整理任务，并把每一步都解释成你能看懂的话。',
     meta: '小事直接执行，大事先确认',
   },
   {
     id: 'm2',
-    role: 'user',
-    author: '你',
-    content: '帮我打开音乐播放器，找一首《真的爱你》。',
-  },
-  {
-    id: 'm3',
     role: 'assistant',
     author: '机灵猫人格',
     content:
-      '收到，我先检查可用播放器，再尝试搜索歌曲。执行时我会在桌面宠物状态里显示忙碌和自言自语。',
-    meta: '已拆分为 打开应用 / 搜索歌曲 / 开始播放',
+      '这一版已经接上了桌面动作链。你可以先试试“打开 D 盘下载区”或者“帮我打开 GitHub”。',
+    meta: '支持的安全动作会自动执行',
   },
 ]
 
-const actionQueue: ActionItem[] = [
+const initialQueue: ActionItem[] = [
   {
     id: 'a1',
-    title: '打开应用',
-    detail: '解析默认播放器和可执行路径',
-    state: 'running',
+    title: '聊天工作台',
+    detail: '主界面和桌面壳已经连通',
+    state: 'done',
   },
   {
     id: 'a2',
     title: '自然语言理解',
-    detail: '将“真的爱你”转成播放器搜索动作',
+    detail: '准备把你的口语指令拆成动作计划',
     state: 'ready',
   },
   {
     id: 'a3',
-    title: '安全确认',
-    detail: '当前任务属于低风险，允许直接执行',
+    title: '本地执行器',
+    detail: '将安全的小动作转成桌面操作',
     state: 'waiting',
   },
 ]
@@ -86,26 +100,125 @@ const personas = [
 ]
 
 const quickActions = [
-  '打开 Chrome',
-  '整理 D 盘文件',
+  '打开 D 盘下载区',
+  '打开 xixi 项目目录',
+  '帮我打开 GitHub',
   '查看今天的天气',
-  '总结 GitHub 学习收获',
 ]
 
+function makeId(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`
+}
+
 function App() {
-  const runtimeMode =
-    '__TAURI_INTERNALS__' in window ? 'Desktop shell' : 'Browser preview'
+  const isDesktop = '__TAURI_INTERNALS__' in window
+  const runtimeMode = isDesktop ? 'Desktop shell' : 'Browser preview'
   const [desktopProfile, setDesktopProfile] = useState<DesktopProfile | null>(null)
+  const [messages, setMessages] = useState(initialMessages)
+  const [actionQueue, setActionQueue] = useState(initialQueue)
+  const [draft, setDraft] = useState('帮我打开 GitHub')
+  const [isBusy, setIsBusy] = useState(false)
 
   useEffect(() => {
-    if (!('__TAURI_INTERNALS__' in window)) {
+    if (!isDesktop) {
       return
     }
 
     invoke<DesktopProfile>('get_desktop_profile')
       .then((profile) => setDesktopProfile(profile))
       .catch(() => setDesktopProfile(null))
-  }, [])
+  }, [isDesktop])
+
+  const appendAssistantMessage = (content: string, meta?: string) => {
+    startTransition(() => {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId('assistant'),
+          role: 'assistant',
+          author: 'xixi',
+          content,
+          meta,
+        },
+      ])
+    })
+  }
+
+  const runRequest = async (request: string) => {
+    const trimmed = request.trim()
+    if (!trimmed || isBusy) {
+      return
+    }
+
+    setIsBusy(true)
+    setDraft('')
+
+    startTransition(() => {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId('user'),
+          role: 'user',
+          author: '你',
+          content: trimmed,
+        },
+      ])
+    })
+
+    try {
+      const plan = await invoke<CommandPlan>('plan_user_request', {
+        request: trimmed,
+      })
+
+      setActionQueue(plan.steps)
+      appendAssistantMessage(
+        plan.assistant_reply,
+        `${plan.risk_level} · ${plan.can_execute_directly ? '可直接执行' : '需要确认'}`
+      )
+
+      if (isDesktop && plan.can_execute_directly && plan.suggested_action) {
+        setActionQueue((current) =>
+          current.map((item, index) =>
+            index === 0 ? { ...item, state: 'running' } : item
+          )
+        )
+
+        const result = await invoke<ActionExecutionResult>('execute_local_action', {
+          action: plan.suggested_action,
+        })
+
+        setActionQueue((current) =>
+          current.map((item) => ({
+            ...item,
+            state: result.ok ? 'done' : item.state === 'running' ? 'error' : item.state,
+          }))
+        )
+
+        appendAssistantMessage(
+          result.summary,
+          result.details.length > 0 ? result.details.join(' / ') : '已完成桌面动作'
+        )
+      } else if (!isDesktop && plan.can_execute_directly) {
+        appendAssistantMessage(
+          '当前是浏览器预览模式，我已经把动作计划好了。等以桌面应用启动后，我会直接替你执行。',
+          '预览模式不会真的操作电脑'
+        )
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '未知错误'
+      appendAssistantMessage(
+        '这次动作没有成功执行，我已经把错误状态保留下来了，方便下一轮继续修。',
+        detail
+      )
+      setActionQueue((current) =>
+        current.map((item, index) =>
+          index === 0 ? { ...item, state: 'error' } : item
+        )
+      )
+    } finally {
+      setIsBusy(false)
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -126,14 +239,16 @@ function App() {
           </div>
           <h1>小橘猫桌面智能体</h1>
           <p className="pet-card__summary">
-            双击桌面宠物进入聊天主界面。这里是第一版控制台，用来承载对话、执行状态和后续的技能系统。
+            双击桌面宠物进入聊天主界面。这里已经不是静态样子货，而是第一版可理解指令、会组织动作、能触发桌面执行的工作台。
           </p>
           <div className="pet-card__status">
             <span className="status-dot" />
-            忙碌中: 正在准备桌面自动化入口
+            {isBusy ? '忙碌中: 正在理解你的新指令' : '待命中: 准备执行新的桌面动作'}
           </div>
           <div className="self-talk">
-            “我先把聊天窗口和执行队列搭好，后面就能真正开始替你做事了。”
+            {isBusy
+              ? '“我先把你的话拆成步骤，再决定是不是能直接帮你做。”'
+              : '“现在你可以直接对我说人话了，我会先理解再动手。”'}
           </div>
           {desktopProfile ? (
             <div className="runtime-note">
@@ -181,7 +296,7 @@ function App() {
 
         <section className="quick-actions">
           {quickActions.map((action) => (
-            <button key={action} type="button">
+            <button key={action} type="button" onClick={() => void runRequest(action)}>
               {action}
             </button>
           ))}
@@ -206,14 +321,21 @@ function App() {
 
             <footer className="composer">
               <div className="composer__hint">
-                以后你可以直接说: “帮我打开某某软件” “整理 D 盘文件” “查天气提醒我”
+                试试这些说法: “打开 D 盘下载区” “帮我打开 GitHub” “查看今天的天气”
               </div>
               <div className="composer__row">
                 <textarea
-                  readOnly
-                  value="第一版先把桌面底座搭好，下一步接真实的本地执行器和模型路由。"
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder="直接用自然语言告诉 xixi 你想做什么"
                 />
-                <button type="button">发送</button>
+                <button
+                  type="button"
+                  onClick={() => void runRequest(draft)}
+                  disabled={isBusy}
+                >
+                  {isBusy ? '处理中' : '发送'}
+                </button>
               </div>
             </footer>
           </div>
@@ -232,12 +354,12 @@ function App() {
               ))}
             </div>
 
-            <div className="section-title">第一版目标</div>
+            <div className="section-title">第一版能力</div>
             <ul className="goal-list">
               <li>像 GPT 一样稳定的聊天主窗口</li>
-              <li>自然语言转成本地电脑动作</li>
+              <li>自然语言转成安全的小动作计划</li>
               <li>桌面宠物状态和自言自语联动</li>
-              <li>技能与智能体注册入口</li>
+              <li>后续接入技能和智能体注册入口</li>
             </ul>
           </aside>
         </section>
