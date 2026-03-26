@@ -1,6 +1,6 @@
 # xixi Roadmap
 
-## Phase 1 - Runnable Core (in progress)
+## Phase 1 - Runnable Core
 
 - [x] Desktop app shell (Tauri + React)
 - [x] Real window controls
@@ -22,8 +22,10 @@
 
 - [ ] Risk classification for command categories
 - [ ] Confirm-before-run on medium/high-risk operations
+- [ ] Model API settings panel (provider, key, model selection)
 - [ ] Permission profile UI for users
-- [ ] Accessibility improvements for low-vision users
+- [ ] Accessibility improvements for seniors and low-vision users
+- [ ] Voice input prototype (push-to-talk + transcript)
 - [ ] Better multilingual command support
 
 ## Phase 4 - Skills and Specialist Agents
@@ -33,6 +35,7 @@
 - [ ] Specialist routing interface
 - [ ] Skill execution observability panel
 - [ ] Contributor templates for new skills
+- [ ] Safe autonomous desktop task chains for non-technical users
 
 ## Phase 5 - Community and Release
 
@@ -41,3 +44,11 @@
 - [ ] Release notes automation
 - [ ] Installer and update strategy
 - [ ] Public beta feedback loop
+- [ ] Accessibility-focused beta testing with real user feedback
+
+## Phase 6 - Advanced Assistive Intelligence (long-term)
+
+- [ ] Chat + voice driven “hands-free” computer operation mode
+- [ ] Assistive workflows for elderly and action-limited users
+- [ ] Stock observation assistant with transparent reasoning
+- [ ] Broker execution integration only with explicit consent and risk controls
