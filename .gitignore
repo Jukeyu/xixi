@@ -1,0 +1,32 @@
+# Node and frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Tauri and Rust
+src-tauri/target/
+
+# Logs and temp
+*.log
+tmp/
+temp/
+.tmp/
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+
+# Runtime and local data
+data/
+runtime/
+screenshots/
+.superpowers/
