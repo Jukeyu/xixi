@@ -1,0 +1,38 @@
+:root {
+  font-family:
+    "Avenir Next", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #21150f;
+  background: #f7efe6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --accent: #ffb36a;
+  --accent-strong: #ff9340;
+  --text: #fff5ed;
+  --text-soft: rgba(255, 245, 237, 0.76);
+  --muted: rgba(255, 245, 237, 0.48);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100vh;
+}
+
+body {
+  min-width: 320px;
+}
+
+button,
+textarea {
+  font: inherit;
+}
