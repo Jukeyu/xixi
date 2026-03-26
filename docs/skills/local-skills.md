@@ -145,3 +145,4 @@ Checklist before using external skill code:
 - Execution still goes through xixi logging and recovery flow.
 - `run_script` is restricted to local skills script folder and allowed extensions.
 - `run_script` output is redirected to `%LOCALAPPDATA%\xixi\skills\runs` for auditing.
+- UI permission profiles can block skill execution before action starts.

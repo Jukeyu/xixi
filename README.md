@@ -105,6 +105,12 @@ You can switch from command mode to model chat mode in Settings.
 - In model mode, chat messages are sent to `/chat/completions`
 - In command mode, xixi keeps using local action planning/execution
 
+## Permission Profiles
+
+- `Safe`: allow web + folder actions only
+- `Balanced`: allow apps and scripts, but block high-risk actions
+- `Advanced`: allow all current actions (high-risk still requires manual confirmation)
+
 ## 自定义技能（你可以自己写）
 
 `xixi` 会从本地技能目录加载 JSON 技能文件，你可以自行扩展简单电脑操作。

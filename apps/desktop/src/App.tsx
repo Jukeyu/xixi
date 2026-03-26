@@ -95,6 +95,14 @@ type PendingAction = {
   action: LocalAction
 }
 
+type FailedActionState = {
+  request: string
+  riskLevel: string
+  action: LocalAction
+}
+
+type PermissionProfile = 'safe' | 'balanced' | 'advanced'
+
 type ThemeMode = 'light' | 'dark'
 
 type SettingsState = {
@@ -102,6 +110,7 @@ type SettingsState = {
   fontScale: number
   compactMode: boolean
   autoRunSupported: boolean
+  permissionProfile: PermissionProfile
   chatMode: 'command' | 'model'
   modelBaseUrl: string
   modelName: string
@@ -137,6 +146,7 @@ const defaultSettings: SettingsState = {
   fontScale: 1,
   compactMode: false,
   autoRunSupported: true,
+  permissionProfile: 'balanced',
   chatMode: 'command',
   modelBaseUrl: 'https://api.openai.com/v1',
   modelName: 'gpt-4o-mini',
@@ -295,6 +305,61 @@ function formatTimestamp(timestampMs: number) {
   return new Date(timestampMs).toLocaleString()
 }
 
+function normalizeRiskLevel(riskLevel: string): 'low-risk' | 'medium-risk' | 'high-risk' | 'unknown' {
+  if (riskLevel === 'low-risk' || riskLevel === 'medium-risk' || riskLevel === 'high-risk') {
+    return riskLevel
+  }
+  return 'unknown'
+}
+
+function permissionProfileText(profile: PermissionProfile) {
+  if (profile === 'safe') {
+    return 'Safe: web/folder only'
+  }
+  if (profile === 'advanced') {
+    return 'Advanced: includes high-risk scripts'
+  }
+  return 'Balanced: apps + scripts (high-risk blocked)'
+}
+
+function isActionAllowedByPermissionProfile(
+  profile: PermissionProfile,
+  action: LocalAction,
+  riskLevel: string
+) {
+  const normalizedRisk = normalizeRiskLevel(riskLevel)
+
+  if (profile === 'advanced') {
+    return { allowed: true, reason: 'Advanced profile allows all current actions.' }
+  }
+
+  if (normalizedRisk === 'high-risk') {
+    return {
+      allowed: false,
+      reason: `${profile} profile blocks high-risk actions.`,
+    }
+  }
+
+  if (normalizedRisk === 'unknown') {
+    return {
+      allowed: false,
+      reason: `${profile} profile blocked action with unknown risk level.`,
+    }
+  }
+
+  if (profile === 'safe') {
+    if (action.kind === 'open_url' || action.kind === 'search_web' || action.kind === 'open_folder') {
+      return { allowed: true, reason: 'Allowed in Safe profile.' }
+    }
+    return {
+      allowed: false,
+      reason: 'Safe profile only allows open_url/search_web/open_folder.',
+    }
+  }
+
+  return { allowed: true, reason: 'Allowed in Balanced profile.' }
+}
+
 function App() {
   const isDesktop = '__TAURI_INTERNALS__' in window
   const runtimeMode = isDesktop ? 'Desktop shell' : 'Browser preview'
@@ -318,7 +383,7 @@ function App() {
     y: 0,
   })
   const [actionLogs, setActionLogs] = useState<ActionLogEntry[]>(() => readStoredActionLogs())
-  const [lastFailedAction, setLastFailedAction] = useState<LocalAction | null>(null)
+  const [lastFailedAction, setLastFailedAction] = useState<FailedActionState | null>(null)
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [apiSetupOpen, setApiSetupOpen] = useState(false)
   const [localSkills, setLocalSkills] = useState<LocalSkillSummary[]>([])
@@ -332,6 +397,10 @@ function App() {
       settings.modelBaseUrl.trim().length > 0 &&
       settings.modelName.trim().length > 0,
     [settings.modelApiKey, settings.modelBaseUrl, settings.modelName]
+  )
+  const permissionText = useMemo(
+    () => permissionProfileText(settings.permissionProfile),
+    [settings.permissionProfile]
   )
 
   useEffect(() => {
@@ -477,6 +546,25 @@ function App() {
     return () => window.removeEventListener('click', closeMenu)
   }, [])
 
+  useEffect(() => {
+    if (!pendingAction) {
+      return
+    }
+
+    const permissionCheck = isActionAllowedByPermissionProfile(
+      settings.permissionProfile,
+      pendingAction.action,
+      pendingAction.riskLevel
+    )
+    if (!permissionCheck.allowed) {
+      setPendingAction(null)
+      appendAssistantMessage(
+        'Pending action was cleared after permission profile changed.',
+        `${settings.permissionProfile} | ${permissionCheck.reason}`
+      )
+    }
+  }, [pendingAction, settings.permissionProfile])
+
   const appendAssistantMessage = (content: string, meta?: string) => {
     startTransition(() => {
       setMessages((current) => [
@@ -514,7 +602,11 @@ function App() {
     setActionLogs((current) => [nextEntry, ...current].slice(0, MAX_ACTION_LOGS))
   }
 
-  const executePlannedAction = async (action: LocalAction, requestText: string) => {
+  const executePlannedAction = async (
+    action: LocalAction,
+    requestText: string,
+    riskLevel: string
+  ) => {
     setActionQueue((current) =>
       current.map((item, index) =>
         index === 0 ? { ...item, state: 'running' } : item
@@ -545,7 +637,11 @@ function App() {
     }
 
     if (!result.ok) {
-      setLastFailedAction(action)
+      setLastFailedAction({
+        action,
+        request: requestText,
+        riskLevel,
+      })
       if (result.recovery_tips.length > 0) {
         appendAssistantMessage('Recovery suggestions', result.recovery_tips.join(' / '))
       }
@@ -625,6 +721,23 @@ function App() {
         `${plan.risk_level} | ${plan.can_execute_directly ? 'real action available' : 'not implemented'}`
       )
 
+      if (plan.can_execute_directly && plan.suggested_action) {
+        const permissionCheck = isActionAllowedByPermissionProfile(
+          settings.permissionProfile,
+          plan.suggested_action,
+          plan.risk_level
+        )
+        if (!permissionCheck.allowed) {
+          setPendingAction(null)
+          setLastFailedAction(null)
+          appendAssistantMessage(
+            'Action blocked by permission profile.',
+            `${settings.permissionProfile} | ${permissionCheck.reason}`
+          )
+          return
+        }
+      }
+
       if (
         isDesktop &&
         settings.autoRunSupported &&
@@ -643,11 +756,15 @@ function App() {
           )
         } else {
           setPendingAction(null)
-          await executePlannedAction(plan.suggested_action, trimmed)
+          await executePlannedAction(plan.suggested_action, trimmed, plan.risk_level)
         }
       } else if (!settings.autoRunSupported && plan.can_execute_directly) {
         if (plan.suggested_action) {
-          setLastFailedAction(plan.suggested_action)
+          setLastFailedAction({
+            action: plan.suggested_action,
+            request: trimmed,
+            riskLevel: plan.risk_level,
+          })
         }
         setPendingAction(null)
         appendAssistantMessage(
@@ -686,21 +803,46 @@ function App() {
 
     setIsBusy(true)
     try {
+      const permissionCheck = isActionAllowedByPermissionProfile(
+        settings.permissionProfile,
+        lastFailedAction.action,
+        lastFailedAction.riskLevel
+      )
+      if (!permissionCheck.allowed) {
+        appendAssistantMessage(
+          'Retry blocked by permission profile.',
+          `${settings.permissionProfile} | ${permissionCheck.reason}`
+        )
+        setActionQueue([
+          {
+            id: makeId('retry-blocked'),
+            title: `Retry blocked: ${lastFailedAction.action.label}`,
+            detail: permissionCheck.reason,
+            state: 'error',
+          },
+        ])
+        return
+      }
+
       appendAssistantMessage(
         'Retrying the last failed action.',
-        `${lastFailedAction.kind} -> ${lastFailedAction.target}`
+        `${lastFailedAction.action.kind} -> ${lastFailedAction.action.target}`
       )
 
       setActionQueue([
         {
           id: makeId('retry'),
-          title: `Retry ${lastFailedAction.label}`,
-          detail: `Retrying ${lastFailedAction.kind} (${lastFailedAction.target})`,
+          title: `Retry ${lastFailedAction.action.label}`,
+          detail: `Retrying ${lastFailedAction.action.kind} (${lastFailedAction.action.target})`,
           state: 'ready',
         },
       ])
 
-      await executePlannedAction(lastFailedAction, `Retry ${lastFailedAction.label}`)
+      await executePlannedAction(
+        lastFailedAction.action,
+        lastFailedAction.request,
+        lastFailedAction.riskLevel
+      )
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Unknown retry error'
       appendAssistantMessage('Retry failed again.', detail)
@@ -721,11 +863,29 @@ function App() {
 
     setIsBusy(true)
     try {
+      const permissionCheck = isActionAllowedByPermissionProfile(
+        settings.permissionProfile,
+        pendingAction.action,
+        pendingAction.riskLevel
+      )
+      if (!permissionCheck.allowed) {
+        appendAssistantMessage(
+          'Pending high-risk action blocked by permission profile.',
+          `${settings.permissionProfile} | ${permissionCheck.reason}`
+        )
+        setPendingAction(null)
+        return
+      }
+
       appendAssistantMessage(
         'Executing approved high-risk action.',
         `${pendingAction.action.kind} -> ${pendingAction.action.target}`
       )
-      await executePlannedAction(pendingAction.action, pendingAction.request)
+      await executePlannedAction(
+        pendingAction.action,
+        pendingAction.request,
+        pendingAction.riskLevel
+      )
       setPendingAction(null)
     } finally {
       setIsBusy(false)
@@ -749,6 +909,27 @@ function App() {
     setActionQueue(initialQueue)
     setLastFailedAction(null)
     setPendingAction(null)
+  }
+
+  const cyclePermissionProfile = () => {
+    setSettings((current) => {
+      const nextProfile: PermissionProfile =
+        current.permissionProfile === 'safe'
+          ? 'balanced'
+          : current.permissionProfile === 'balanced'
+            ? 'advanced'
+            : 'safe'
+
+      appendAssistantMessage(
+        'Permission profile updated.',
+        `${current.permissionProfile} -> ${nextProfile}`
+      )
+
+      return {
+        ...current,
+        permissionProfile: nextProfile,
+      }
+    })
   }
 
   const toggleTheme = () => {
@@ -873,7 +1054,10 @@ function App() {
           </div>
           <div className="runtime-note">
             Chat mode: <strong>{settings.chatMode}</strong> | Model API:{' '}
-            {hasModelApiConfigured ? 'configured' : 'not configured'}
+            {hasModelApiConfigured ? 'configured' : 'not configured'} | Permission:{' '}
+            <strong>{settings.permissionProfile}</strong>
+            <br />
+            {permissionText}
           </div>
           <div className="self-talk">
             {isBusy
@@ -1061,14 +1245,16 @@ function App() {
               <li>Window controls call the real desktop shell</li>
               <li>Close hides to tray instead of silent exit</li>
               <li>Every execution writes a structured action log</li>
+              <li>Permission profile can block actions before execution</li>
             </ul>
 
             {lastFailedAction ? (
               <div className="failed-action-box">
                 <div className="section-title">Recovery</div>
                 <p>
-                  Last failed action: <strong>{lastFailedAction.label}</strong>
+                  Last failed action: <strong>{lastFailedAction.action.label}</strong>
                 </p>
+                <p>Risk level: {lastFailedAction.riskLevel}</p>
                 <button
                   type="button"
                   className="retry-button"
@@ -1227,6 +1413,23 @@ function App() {
                 }
               />
               <span>Auto-run supported commands</span>
+            </label>
+
+            <label className="settings-row">
+              <span>Permission profile</span>
+              <select
+                value={settings.permissionProfile}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    permissionProfile: event.target.value as PermissionProfile,
+                  }))
+                }
+              >
+                <option value="safe">Safe (web + folders only)</option>
+                <option value="balanced">Balanced (apps + scripts, high-risk blocked)</option>
+                <option value="advanced">Advanced (all current actions)</option>
+              </select>
             </label>
 
             <label className="settings-row">
@@ -1520,6 +1723,9 @@ function App() {
             }
           >
             Toggle auto-run
+          </button>
+          <button type="button" onClick={cyclePermissionProfile}>
+            Cycle permission profile
           </button>
           <button type="button" onClick={() => setSettingsOpen(true)}>
             Open settings

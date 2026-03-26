@@ -57,6 +57,7 @@ This document describes the current architecture of the runnable desktop build.
 - high-risk command gate in UI (manual approval before execution)
 - dual chat mode: command planner mode and model API chat mode
 - model API command: OpenAI-compatible `/chat/completions` via desktop Rust bridge
+- permission profiles in UI: safe, balanced, advanced
 - executable adapters:
   - folder open
   - URL open and web search URL launch
