@@ -55,6 +55,8 @@ This document describes the current architecture of the runnable desktop build.
 - local script skills from `%LOCALAPPDATA%\\xixi\\skills\\scripts`
 - local script run logs from `%LOCALAPPDATA%\\xixi\\skills\\runs`
 - high-risk command gate in UI (manual approval before execution)
+- dual chat mode: command planner mode and model API chat mode
+- model API command: OpenAI-compatible `/chat/completions` via desktop Rust bridge
 - executable adapters:
   - folder open
   - URL open and web search URL launch

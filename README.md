@@ -96,6 +96,15 @@ npm run lint
 npm run test:smoke
 ```
 
+## Model API Chat Mode (OpenAI-compatible)
+
+You can switch from command mode to model chat mode in Settings.
+
+- Fill: `Model API base URL`, `Model name`, `API key`
+- Example base URL: `https://api.openai.com/v1`
+- In model mode, chat messages are sent to `/chat/completions`
+- In command mode, xixi keeps using local action planning/execution
+
 ## 自定义技能（你可以自己写）
 
 `xixi` 会从本地技能目录加载 JSON 技能文件，你可以自行扩展简单电脑操作。

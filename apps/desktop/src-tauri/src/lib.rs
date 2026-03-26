@@ -1,3 +1,4 @@
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -7,7 +8,7 @@ use std::{
   path::{Path, PathBuf},
   process::{Command, Stdio},
   sync::atomic::{AtomicBool, Ordering},
-  time::{Instant, SystemTime, UNIX_EPOCH},
+  time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
   menu::{Menu, MenuItem},
@@ -86,6 +87,25 @@ struct ActionExecutionResult {
   recovery_tips: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct ModelApiChatRequest {
+  base_url: String,
+  api_key: String,
+  model: String,
+  user_prompt: String,
+  system_prompt: Option<String>,
+  temperature: Option<f32>,
+  max_tokens: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct ModelApiChatResponse {
+  content: String,
+  model: String,
+  usage_summary: Option<String>,
+  latency_ms: u64,
+}
+
 #[derive(Default)]
 struct AppRuntimeState {
   quitting: AtomicBool,
@@ -130,6 +150,101 @@ fn list_local_skills() -> Vec<LocalSkillSummary> {
 #[tauri::command]
 fn get_skills_folder_path() -> String {
   skills_dir_path().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+fn chat_with_model_api(request: ModelApiChatRequest) -> Result<ModelApiChatResponse, String> {
+  let base_url = request.base_url.trim();
+  let api_key = request.api_key.trim();
+  let model = request.model.trim();
+  let user_prompt = request.user_prompt.trim();
+
+  if base_url.is_empty() {
+    return Err("Model API base URL is empty.".into());
+  }
+  if api_key.is_empty() {
+    return Err("Model API key is empty.".into());
+  }
+  if model.is_empty() {
+    return Err("Model name is empty.".into());
+  }
+  if user_prompt.is_empty() {
+    return Err("User prompt is empty.".into());
+  }
+
+  let endpoint = build_chat_completions_endpoint(base_url);
+  let mut messages = Vec::new();
+
+  if let Some(system_prompt) = request.system_prompt {
+    let trimmed = system_prompt.trim();
+    if !trimmed.is_empty() {
+      messages.push(json!({
+        "role": "system",
+        "content": trimmed
+      }));
+    }
+  }
+
+  messages.push(json!({
+    "role": "user",
+    "content": user_prompt
+  }));
+
+  let temperature = request.temperature.unwrap_or(0.4).clamp(0.0, 2.0);
+  let max_tokens = request.max_tokens.unwrap_or(512).clamp(16, 4096);
+
+  let payload = json!({
+    "model": model,
+    "messages": messages,
+    "temperature": temperature,
+    "max_tokens": max_tokens
+  });
+
+  let client = Client::builder()
+    .timeout(Duration::from_secs(45))
+    .build()
+    .map_err(|error| format!("Failed to build HTTP client: {error}"))?;
+
+  let started = Instant::now();
+  let response = client
+    .post(&endpoint)
+    .bearer_auth(api_key)
+    .json(&payload)
+    .send()
+    .map_err(|error| format!("Failed to request model API: {error}"))?;
+
+  let status = response.status();
+  let response_text = response
+    .text()
+    .map_err(|error| format!("Failed to read model API response: {error}"))?;
+
+  if !status.is_success() {
+    return Err(format!(
+      "Model API request failed: HTTP {} {}",
+      status.as_u16(),
+      truncate_error_text(&response_text, 240)
+    ));
+  }
+
+  let response_json: serde_json::Value = serde_json::from_str(&response_text)
+    .map_err(|error| format!("Model API response is not valid JSON: {error}"))?;
+  let content = extract_model_content(&response_json)?;
+
+  let response_model = response_json
+    .get("model")
+    .and_then(|value| value.as_str())
+    .unwrap_or(model)
+    .to_string();
+  let usage_summary = response_json
+    .get("usage")
+    .and_then(|usage| serde_json::to_string(usage).ok());
+
+  Ok(ModelApiChatResponse {
+    content,
+    model: response_model,
+    usage_summary,
+    latency_ms: started.elapsed().as_millis() as u64,
+  })
 }
 
 #[tauri::command]
@@ -1195,6 +1310,63 @@ fn try_spawn_any(candidates: &[&str]) -> bool {
     .any(|candidate| Command::new(candidate).spawn().is_ok())
 }
 
+fn build_chat_completions_endpoint(base_url: &str) -> String {
+  let normalized = base_url.trim_end_matches('/');
+  if normalized.ends_with("/chat/completions") {
+    return normalized.to_string();
+  }
+  format!("{normalized}/chat/completions")
+}
+
+fn extract_model_content(response_json: &serde_json::Value) -> Result<String, String> {
+  if let Some(content) = response_json
+    .pointer("/choices/0/message/content")
+    .and_then(|value| value.as_str())
+  {
+    let trimmed = content.trim();
+    if !trimmed.is_empty() {
+      return Ok(trimmed.to_string());
+    }
+  }
+
+  if let Some(content_parts) = response_json
+    .pointer("/choices/0/message/content")
+    .and_then(|value| value.as_array())
+  {
+    let joined = content_parts
+      .iter()
+      .filter_map(|part| part.get("text").and_then(|value| value.as_str()))
+      .collect::<Vec<_>>()
+      .join("\n")
+      .trim()
+      .to_string();
+
+    if !joined.is_empty() {
+      return Ok(joined);
+    }
+  }
+
+  if let Some(legacy_text) = response_json
+    .pointer("/choices/0/text")
+    .and_then(|value| value.as_str())
+  {
+    let trimmed = legacy_text.trim();
+    if !trimmed.is_empty() {
+      return Ok(trimmed.to_string());
+    }
+  }
+
+  Err("Model API response did not contain assistant text.".into())
+}
+
+fn truncate_error_text(text: &str, max_len: usize) -> String {
+  if text.len() <= max_len {
+    return text.to_string();
+  }
+
+  format!("{}...", &text[..max_len])
+}
+
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
   needles.iter().any(|needle| haystack.contains(needle))
 }
@@ -1665,6 +1837,32 @@ mod tests {
     assert_eq!(sanitize_path_token("screen watch/ocr"), "screen_watch_ocr");
     assert_eq!(sanitize_path_token(""), "skill_run");
   }
+
+  #[test]
+  fn builds_chat_endpoint_from_base_url() {
+    assert_eq!(
+      build_chat_completions_endpoint("https://api.openai.com/v1"),
+      "https://api.openai.com/v1/chat/completions"
+    );
+    assert_eq!(
+      build_chat_completions_endpoint("https://example.com/v1/chat/completions"),
+      "https://example.com/v1/chat/completions"
+    );
+  }
+
+  #[test]
+  fn extracts_model_content_from_chat_completions() {
+    let payload = json!({
+      "choices": [{
+        "message": {
+          "content": "hello from model"
+        }
+      }]
+    });
+
+    let content = extract_model_content(&payload).expect("content should exist");
+    assert_eq!(content, "hello from model");
+  }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1740,6 +1938,7 @@ pub fn run() {
       get_desktop_profile,
       list_local_skills,
       get_skills_folder_path,
+      chat_with_model_api,
       plan_user_request,
       execute_local_action,
       quit_application

@@ -412,7 +412,8 @@
 
 .composer textarea,
 .settings-row input,
-.settings-row select {
+.settings-row select,
+.settings-row textarea {
   width: 100%;
   border-radius: 18px;
   border: 1px solid var(--panel-border);
@@ -425,6 +426,11 @@
 .composer textarea {
   min-height: 98px;
   resize: none;
+}
+
+.settings-row textarea {
+  min-height: 90px;
+  resize: vertical;
 }
 
 .action-card__header span {
@@ -586,6 +592,21 @@
 .settings-toggle {
   grid-template-columns: auto 1fr;
   align-items: center;
+}
+
+.settings-note {
+  margin: 14px 0 4px;
+  color: var(--foreground-soft);
+}
+
+.api-setup-panel {
+  width: min(620px, 100%);
+}
+
+.api-setup-actions {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
 }
 
 .context-menu {

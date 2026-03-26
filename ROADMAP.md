@@ -24,7 +24,7 @@
 
 - [ ] Risk classification for command categories
 - [x] Confirm-before-run on high-risk operations
-- [ ] Model API settings panel (provider, key, model selection)
+- [x] Model API settings panel and model chat mode (OpenAI-compatible endpoint)
 - [ ] Permission profile UI for users
 - [ ] Accessibility improvements for seniors and low-vision users
 - [ ] Better multilingual command support

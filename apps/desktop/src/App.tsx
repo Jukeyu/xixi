@@ -72,6 +72,23 @@ type LocalSkillSummary = {
   aliases: string[]
 }
 
+type ModelChatApiRequest = {
+  base_url: string
+  api_key: string
+  model: string
+  user_prompt: string
+  system_prompt?: string | null
+  temperature?: number
+  max_tokens?: number
+}
+
+type ModelChatApiResponse = {
+  content: string
+  model: string
+  usage_summary?: string | null
+  latency_ms: number
+}
+
 type PendingAction = {
   request: string
   riskLevel: string
@@ -85,6 +102,13 @@ type SettingsState = {
   fontScale: number
   compactMode: boolean
   autoRunSupported: boolean
+  chatMode: 'command' | 'model'
+  modelBaseUrl: string
+  modelName: string
+  modelApiKey: string
+  modelSystemPrompt: string
+  modelTemperature: number
+  modelMaxTokens: number
   weatherLocationName: string
   weatherLatitude: number
   weatherLongitude: number
@@ -113,6 +137,14 @@ const defaultSettings: SettingsState = {
   fontScale: 1,
   compactMode: false,
   autoRunSupported: true,
+  chatMode: 'command',
+  modelBaseUrl: 'https://api.openai.com/v1',
+  modelName: 'gpt-4o-mini',
+  modelApiKey: '',
+  modelSystemPrompt:
+    'You are xixi, a practical desktop assistant. Be concise, honest, and action-oriented.',
+  modelTemperature: 0.4,
+  modelMaxTokens: 600,
   weatherLocationName: 'Taipei',
   weatherLatitude: 25.033,
   weatherLongitude: 121.5654,
@@ -134,6 +166,14 @@ const initialMessages: ChatMessage[] = [
     content:
       'Supported now includes parameterized commands: open site openai.com, search web tauri tray icon, open folder downloads, open app calculator.',
     meta: 'Unsupported requests stay explicit.',
+  },
+  {
+    id: 'm3',
+    role: 'assistant',
+    author: 'xixi',
+    content:
+      'You can switch to Model Chat mode after filling API settings (base URL, model, key).',
+    meta: 'Command mode and model mode can be switched anytime.',
   },
 ]
 
@@ -280,11 +320,19 @@ function App() {
   const [actionLogs, setActionLogs] = useState<ActionLogEntry[]>(() => readStoredActionLogs())
   const [lastFailedAction, setLastFailedAction] = useState<LocalAction | null>(null)
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
+  const [apiSetupOpen, setApiSetupOpen] = useState(false)
   const [localSkills, setLocalSkills] = useState<LocalSkillSummary[]>([])
   const [skillsFolderPath, setSkillsFolderPath] = useState('')
   const [weatherReloadTick, setWeatherReloadTick] = useState(0)
 
   const windowApi = useMemo(() => (isDesktop ? getCurrentWindow() : null), [isDesktop])
+  const hasModelApiConfigured = useMemo(
+    () =>
+      settings.modelApiKey.trim().length > 0 &&
+      settings.modelBaseUrl.trim().length > 0 &&
+      settings.modelName.trim().length > 0,
+    [settings.modelApiKey, settings.modelBaseUrl, settings.modelName]
+  )
 
   useEffect(() => {
     if (!isDesktop) {
@@ -309,6 +357,16 @@ function App() {
       .then((path) => setSkillsFolderPath(path))
       .catch(() => setSkillsFolderPath(''))
   }, [isDesktop])
+
+  useEffect(() => {
+    if (!isDesktop) {
+      return
+    }
+
+    if (!hasModelApiConfigured) {
+      setApiSetupOpen(true)
+    }
+  }, [hasModelApiConfigured, isDesktop])
 
   useEffect(() => {
     if (!windowApi) {
@@ -498,6 +556,38 @@ function App() {
     return result
   }
 
+  const runModelChat = async (requestText: string) => {
+    if (!hasModelApiConfigured) {
+      appendAssistantMessage(
+        'Model API is not configured yet. Fill base URL, model, and API key first.',
+        'Open settings and complete Model API setup'
+      )
+      setApiSetupOpen(true)
+      return
+    }
+
+    const response = await invoke<ModelChatApiResponse>('chat_with_model_api', {
+      request: {
+        base_url: settings.modelBaseUrl.trim(),
+        api_key: settings.modelApiKey.trim(),
+        model: settings.modelName.trim(),
+        user_prompt: requestText,
+        system_prompt: settings.modelSystemPrompt.trim(),
+        temperature: settings.modelTemperature,
+        max_tokens: settings.modelMaxTokens,
+      } satisfies ModelChatApiRequest,
+    })
+
+    appendAssistantMessage(
+      response.content,
+      `model=${response.model} | ${response.latency_ms} ms`
+    )
+
+    if (response.usage_summary) {
+      appendAssistantMessage('Usage', response.usage_summary)
+    }
+  }
+
   const runRequest = async (request: string) => {
     const trimmed = request.trim()
     if (!trimmed || isBusy) {
@@ -520,6 +610,11 @@ function App() {
     })
 
     try {
+      if (settings.chatMode === 'model') {
+        await runModelChat(trimmed)
+        return
+      }
+
       const plan = await invoke<CommandPlan>('plan_user_request', {
         request: trimmed,
       })
@@ -776,6 +871,10 @@ function App() {
             <span className="status-dot" />
             {isBusy ? 'Busy: planning and running a real action' : 'Idle: waiting for a supported command'}
           </div>
+          <div className="runtime-note">
+            Chat mode: <strong>{settings.chatMode}</strong> | Model API:{' '}
+            {hasModelApiConfigured ? 'configured' : 'not configured'}
+          </div>
           <div className="self-talk">
             {isBusy
               ? '"I am working through a real action path now."'
@@ -915,13 +1014,19 @@ function App() {
 
             <footer className="composer">
               <div className="composer__hint">
-                I only execute commands that are actually wired. Try: run skill open_github
+                {settings.chatMode === 'command'
+                  ? 'I only execute commands that are actually wired. Try: run skill open_github'
+                  : 'Model chat mode is active. Messages are sent to your configured model API.'}
               </div>
               <div className="composer__row">
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Try: run skill open_github / open site openai.com / open folder downloads"
+                  placeholder={
+                    settings.chatMode === 'command'
+                      ? 'Try: run skill open_github / open site openai.com / open folder downloads'
+                      : 'Ask anything... response will come from model API'
+                  }
                 />
                 <button
                   type="button"
@@ -1125,6 +1230,115 @@ function App() {
             </label>
 
             <label className="settings-row">
+              <span>Chat mode</span>
+              <select
+                value={settings.chatMode}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    chatMode: event.target.value as 'command' | 'model',
+                  }))
+                }
+              >
+                <option value="command">Command mode (desktop actions)</option>
+                <option value="model">Model chat mode (API)</option>
+              </select>
+            </label>
+
+            <label className="settings-row">
+              <span>Model API base URL</span>
+              <input
+                type="text"
+                value={settings.modelBaseUrl}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelBaseUrl: event.target.value,
+                  }))
+                }
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>Model name</span>
+              <input
+                type="text"
+                value={settings.modelName}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelName: event.target.value,
+                  }))
+                }
+                placeholder="gpt-4o-mini"
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>API key</span>
+              <input
+                type="password"
+                value={settings.modelApiKey}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelApiKey: event.target.value,
+                  }))
+                }
+                placeholder="sk-..."
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>System prompt</span>
+              <textarea
+                value={settings.modelSystemPrompt}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelSystemPrompt: event.target.value,
+                  }))
+                }
+                rows={4}
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>Temperature</span>
+              <input
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                value={settings.modelTemperature}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelTemperature: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>Max tokens</span>
+              <input
+                type="number"
+                min="16"
+                max="4096"
+                step="1"
+                value={settings.modelMaxTokens}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelMaxTokens: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+
+            <label className="settings-row">
               <span>Weather location name</span>
               <input
                 type="text"
@@ -1171,6 +1385,105 @@ function App() {
         </div>
       ) : null}
 
+      {apiSetupOpen ? (
+        <div className="settings-overlay" role="presentation">
+          <section
+            className="settings-panel api-setup-panel"
+            role="dialog"
+            aria-label="Model API setup"
+          >
+            <div className="settings-panel__header">
+              <div>
+                <div className="section-title">Model API Setup</div>
+                <h3>Fill API config for model chat</h3>
+              </div>
+            </div>
+
+            <p className="settings-note">
+              Command mode can run without API key. Model chat mode needs base URL, model name, and key.
+            </p>
+
+            <label className="settings-row">
+              <span>Model API base URL</span>
+              <input
+                type="text"
+                value={settings.modelBaseUrl}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelBaseUrl: event.target.value,
+                  }))
+                }
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>Model name</span>
+              <input
+                type="text"
+                value={settings.modelName}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelName: event.target.value,
+                  }))
+                }
+                placeholder="gpt-4o-mini"
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>API key</span>
+              <input
+                type="password"
+                value={settings.modelApiKey}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    modelApiKey: event.target.value,
+                  }))
+                }
+                placeholder="sk-..."
+              />
+            </label>
+
+            <div className="api-setup-actions">
+              <button
+                type="button"
+                className="retry-button"
+                onClick={() => {
+                  if (hasModelApiConfigured) {
+                    setApiSetupOpen(false)
+                    setSettings((current) => ({ ...current, chatMode: 'model' }))
+                    appendAssistantMessage(
+                      'Model API setup saved. Switched to model chat mode.',
+                      `${settings.modelName} @ ${settings.modelBaseUrl}`
+                    )
+                  } else {
+                    appendAssistantMessage(
+                      'Please fill base URL, model name, and API key before enabling model chat.'
+                    )
+                  }
+                }}
+              >
+                Save and enable model chat
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setApiSetupOpen(false)
+                  setSettings((current) => ({ ...current, chatMode: 'command' }))
+                }}
+              >
+                Continue with command mode
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {contextMenu.open ? (
         <div
           className="context-menu"
@@ -1210,6 +1523,9 @@ function App() {
           </button>
           <button type="button" onClick={() => setSettingsOpen(true)}>
             Open settings
+          </button>
+          <button type="button" onClick={() => setApiSetupOpen(true)}>
+            Open model API setup
           </button>
           <button type="button" onClick={resetConversation}>
             Reset chat
