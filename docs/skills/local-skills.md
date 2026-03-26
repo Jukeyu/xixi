@@ -17,6 +17,8 @@ Examples:
 
 ```text
 run skill open_github
+run skill open_firefox
+run skill open_music_player
 run skill open_tradingview
 run skill search_stock_news tsla
 run skill screen_watch_ocr keyword=stock duration=20
@@ -104,6 +106,17 @@ run skill desktop_action_safe hotkey:ctrl,s
 
 `desktop_action_safe` blocks a small set of dangerous combinations by default and logs every run.
 Because it is marked `high-risk`, the desktop UI requires manual confirmation before execution.
+
+You can also use direct natural command phrases in chat (without `run skill`), for example:
+
+```text
+open music player
+open app firefox
+type hello from xixi
+press key enter
+hotkey ctrl,s
+watch screen stock
+```
 
 ## Python Dependencies
 

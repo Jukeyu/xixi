@@ -9,20 +9,24 @@ This note records practical open-source options for:
 
 1. `python-mss` (fast screen capture, multi-monitor)  
    Repo: https://github.com/BoboTiG/python-mss  
+   Docs: https://python-mss.readthedocs.io/  
    License: MIT  
    Decision: use in `screen_watch_ocr.py` for screenshot loop.
 
 2. `pytesseract` + Tesseract OCR engine  
    Repo: https://github.com/madmaze/pytesseract  
+   Tesseract docs: https://tesseract-ocr.github.io/  
    License: Apache-2.0 (wrapper)  
    Decision: use for OCR text extraction in keyword detection flow.
 
 3. `PyAutoGUI` (cross-platform mouse/keyboard automation)  
+   Docs: https://pyautogui.readthedocs.io/en/latest/  
    Repo: https://github.com/asweigart/pyautogui  
    License: BSD-3-Clause  
    Decision: use in `safe_desktop_action.py` with command blocklist and failsafe.
 
 4. `pywinauto` (Windows UI automation)  
+   Docs: https://pywinauto.readthedocs.io/en/latest/getting_started.html  
    Repo: https://github.com/pywinauto/pywinauto  
    License: BSD-3-Clause  
    Decision: keep as phase-next option for stronger control of native Windows controls.
@@ -38,6 +42,11 @@ This note records practical open-source options for:
    Repo: https://github.com/browser-use/browser-use  
    License: MIT  
    Reason not default: good for browser agents, but current phase focuses on local desktop skill scripts first.
+
+3. `Microsoft UFO`  
+   Repo: https://github.com/microsoft/UFO  
+   License: MIT  
+   Reason not default: architecture is much heavier than current local-script skill runtime; useful as future reference for multi-device orchestration patterns.
 
 ## Integration Rules Used in xixi
 

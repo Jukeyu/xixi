@@ -401,6 +401,26 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if contains_any(&lowered, &["open firefox", "firefox", "open browser", "browser"]) {
+    return direct_plan(
+      "I can try to launch a browser right now.",
+      vec![
+        step("plan-firefox-1", "Match command", "Mapped request to Firefox launch", "done"),
+        step(
+          "plan-firefox-2",
+          "Run app launch",
+          "Try known Firefox executable locations",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "firefox".into(),
+        label: "Mozilla Firefox".into(),
+      },
+    );
+  }
+
   if contains_any(&lowered, &["open notepad", "notepad"])
     || contains_any(&compact, &["打开记事本", "打开notepad"])
   {
@@ -505,8 +525,115 @@ fn plan_user_request(request: String) -> CommandPlan {
     return unsupported_parameter_plan(
       "app alias",
       &app_query,
-      "Try one of: chrome, edge, notepad, explorer, calculator, paint.",
+      "Try one of: chrome, edge, firefox, notepad, explorer, calculator, paint, spotify, music, vlc, wmplayer.",
     );
+  }
+
+  if contains_any(&lowered, &["open music", "open music player", "play music", "open spotify"]) {
+    return direct_plan(
+      "I can launch a local music player right now.",
+      vec![
+        step("plan-music-1", "Match command", "Mapped request to music player launch", "done"),
+        step(
+          "plan-music-2",
+          "Run app launch",
+          "Try Spotify, VLC, or Windows Media Player",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "music".into(),
+        label: "Music player".into(),
+      },
+    );
+  }
+
+  if let Some(raw_text) = extract_after_prefix_case_insensitive(trimmed, &["type ", "input text ", "enter text "]) {
+    let text = raw_text.trim();
+    if !text.is_empty() {
+      if let Ok(action) = build_run_script_action(
+        "safe_desktop_action.py",
+        Some(format!("type:{text}")),
+        "Desktop Action Safe (type)",
+      ) {
+        return action_plan(
+          "I can type that text through local keyboard automation.",
+          "high-risk",
+          vec![
+            step("plan-type-1", "Parse text", "Extracted text input from command", "done"),
+            step("plan-type-2", "Build safe script payload", "Prepared type:* command", "done"),
+            step("plan-type-3", "Run local script", "Execute keyboard typing action", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_key) = extract_after_prefix_case_insensitive(trimmed, &["press key ", "key "]) {
+    let key = raw_key.trim();
+    if !key.is_empty() {
+      if let Ok(action) = build_run_script_action(
+        "safe_desktop_action.py",
+        Some(format!("press:{key}")),
+        "Desktop Action Safe (press key)",
+      ) {
+        return action_plan(
+          "I can press that key through local keyboard automation.",
+          "high-risk",
+          vec![
+            step("plan-press-1", "Parse key", "Extracted key input", "done"),
+            step("plan-press-2", "Build safe script payload", "Prepared press:* command", "done"),
+            step("plan-press-3", "Run local script", "Execute keyboard press action", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_hotkey) = extract_after_prefix_case_insensitive(trimmed, &["hotkey ", "press hotkey "]) {
+    let hotkey = raw_hotkey.trim();
+    if !hotkey.is_empty() {
+      if let Ok(action) = build_run_script_action(
+        "safe_desktop_action.py",
+        Some(format!("hotkey:{hotkey}")),
+        "Desktop Action Safe (hotkey)",
+      ) {
+        return action_plan(
+          "I can send that hotkey through local keyboard automation.",
+          "high-risk",
+          vec![
+            step("plan-hotkey-1", "Parse hotkey", "Extracted hotkey sequence", "done"),
+            step("plan-hotkey-2", "Build safe script payload", "Prepared hotkey:* command", "done"),
+            step("plan-hotkey-3", "Run local script", "Execute keyboard hotkey action", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_watch) = extract_after_prefix_case_insensitive(trimmed, &["watch screen ", "screen watch "]) {
+    let keyword = raw_watch.trim();
+    let input = if keyword.is_empty() {
+      "keyword=stock duration=20 interval=1 max_hits=2".to_string()
+    } else {
+      format!("keyword={keyword} duration=20 interval=1 max_hits=2")
+    };
+    if let Ok(action) = build_run_script_action("screen_watch_ocr.py", Some(input), "Screen Watch OCR") {
+      return action_plan(
+        "I can start a real screen-watch OCR task now.",
+        "medium-risk",
+        vec![
+          step("plan-watch-1", "Parse watch target", "Resolved OCR watch keyword", "done"),
+          step("plan-watch-2", "Build OCR script payload", "Prepared screen_watch_ocr args", "done"),
+          step("plan-watch-3", "Run local script", "Execute OCR watch loop", "ready"),
+        ],
+        action,
+      );
+    }
   }
 
   if let Some(site_target) = extract_after_prefix_case_insensitive(
@@ -644,14 +771,32 @@ fn restore_main_from_pet(app: tauri::AppHandle) {
   show_main_window(&app);
 }
 
-fn direct_plan(reply: &str, steps: Vec<ActionItem>, action: LocalAction) -> CommandPlan {
+fn action_plan(reply: &str, risk_level: &str, steps: Vec<ActionItem>, action: LocalAction) -> CommandPlan {
   CommandPlan {
     assistant_reply: reply.into(),
-    risk_level: "low-risk".into(),
+    risk_level: risk_level.into(),
     can_execute_directly: true,
     steps,
     suggested_action: Some(action),
   }
+}
+
+fn direct_plan(reply: &str, steps: Vec<ActionItem>, action: LocalAction) -> CommandPlan {
+  action_plan(reply, "low-risk", steps, action)
+}
+
+fn build_run_script_action(script: &str, input: Option<String>, label: &str) -> Result<LocalAction, String> {
+  let payload = ScriptTargetPayload {
+    script: script.into(),
+    input,
+  };
+  let target = serde_json::to_string(&payload)
+    .map_err(|error| format!("Failed to build script action payload: {error}"))?;
+  Ok(LocalAction {
+    kind: "run_script".into(),
+    target,
+    label: label.into(),
+  })
 }
 
 fn unsupported_plan() -> CommandPlan {
@@ -1151,6 +1296,36 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       aliases: Some(vec!["downloads".into(), "下载目录".into()]),
     },
     LocalSkillDefinition {
+      id: "open_firefox".into(),
+      name: "Open Firefox".into(),
+      description: "Launch Mozilla Firefox browser.".into(),
+      kind: "open_app".into(),
+      target_template: "firefox".into(),
+      label_template: Some("Mozilla Firefox".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["firefox".into(), "mozilla".into()]),
+    },
+    LocalSkillDefinition {
+      id: "open_music_player".into(),
+      name: "Open Music Player".into(),
+      description: "Launch a local music player (Spotify/VLC/WMP fallback).".into(),
+      kind: "open_app".into(),
+      target_template: "music".into(),
+      label_template: Some("Music player".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["music".into(), "musicplayer".into()]),
+    },
+    LocalSkillDefinition {
+      id: "open_spotify_app".into(),
+      name: "Open Spotify".into(),
+      description: "Launch Spotify desktop app.".into(),
+      kind: "open_app".into(),
+      target_template: "spotify".into(),
+      label_template: Some("Spotify".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["spotify".into()]),
+    },
+    LocalSkillDefinition {
       id: "screen_watch_stub".into(),
       name: "Screen Watch Stub".into(),
       description: "Run a local python stub script for screen-watch workflow.".into(),
@@ -1237,6 +1412,22 @@ fn open_app(target: &str, label: &str) -> Result<(String, Vec<String>), String> 
       r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
       "msedge.exe",
     ]),
+    "firefox" => try_spawn_any(&[
+      r"C:\Program Files\Mozilla Firefox\firefox.exe",
+      r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+      "firefox.exe",
+    ]),
+    "spotify" => try_spawn_spotify(),
+    "vlc" => try_spawn_any(&[
+      r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+      r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+      "vlc.exe",
+    ]),
+    "wmplayer" => try_spawn_any(&[
+      r"C:\Program Files\Windows Media Player\wmplayer.exe",
+      "wmplayer.exe",
+    ]),
+    "music" => try_spawn_music_player(),
     "notepad" => Command::new("notepad.exe").spawn().is_ok(),
     "explorer" => Command::new("explorer.exe").spawn().is_ok(),
     "calculator" => Command::new("calc.exe").spawn().is_ok(),
@@ -1318,6 +1509,53 @@ fn try_spawn_any(candidates: &[&str]) -> bool {
   candidates
     .iter()
     .any(|candidate| Command::new(candidate).spawn().is_ok())
+}
+
+fn try_spawn_strings(candidates: &[String]) -> bool {
+  candidates
+    .iter()
+    .any(|candidate| Command::new(candidate).spawn().is_ok())
+}
+
+fn try_spawn_spotify() -> bool {
+  let mut candidates = vec![
+    r"C:\Program Files\Spotify\Spotify.exe".to_string(),
+    r"C:\Program Files (x86)\Spotify\Spotify.exe".to_string(),
+    "spotify.exe".to_string(),
+  ];
+  if let Ok(app_data) = env::var("APPDATA") {
+    candidates.push(
+      Path::new(&app_data)
+        .join("Spotify")
+        .join("Spotify.exe")
+        .to_string_lossy()
+        .into_owned(),
+    );
+  }
+  if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+    candidates.push(
+      Path::new(&local_app_data)
+        .join("Microsoft")
+        .join("WindowsApps")
+        .join("Spotify.exe")
+        .to_string_lossy()
+        .into_owned(),
+    );
+  }
+  try_spawn_strings(&candidates)
+}
+
+fn try_spawn_music_player() -> bool {
+  try_spawn_spotify()
+    || try_spawn_any(&[
+      r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+      r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+      "vlc.exe",
+    ])
+    || try_spawn_any(&[
+      r"C:\Program Files\Windows Media Player\wmplayer.exe",
+      "wmplayer.exe",
+    ])
 }
 
 fn build_chat_completions_endpoint(base_url: &str) -> String {
@@ -1575,7 +1813,8 @@ fn first_existing_path(candidates: &[PathBuf]) -> Option<String> {
     .map(|path| path.to_string_lossy().into_owned())
 }
 
-fn resolve_app_alias(query: &str) -> Option<(&'static str, &'static str)> {
+#[allow(dead_code)]
+fn resolve_app_alias_legacy(query: &str) -> Option<(&'static str, &'static str)> {
   let normalized = normalize_alias(query);
   match normalized.as_str() {
     "chrome" | "谷歌" | "谷歌浏览器" => Some(("chrome", "Google Chrome")),
@@ -1590,11 +1829,30 @@ fn resolve_app_alias(query: &str) -> Option<(&'static str, &'static str)> {
   }
 }
 
+fn resolve_app_alias(query: &str) -> Option<(&'static str, &'static str)> {
+  let normalized = normalize_alias(query);
+  match normalized.as_str() {
+    "chrome" => Some(("chrome", "Google Chrome")),
+    "edge" => Some(("edge", "Microsoft Edge")),
+    "browser" | "defaultbrowser" => Some(("edge", "Browser (Microsoft Edge)")),
+    "firefox" | "mozilla" => Some(("firefox", "Mozilla Firefox")),
+    "spotify" => Some(("spotify", "Spotify")),
+    "vlc" | "videolan" => Some(("vlc", "VLC Player")),
+    "wmplayer" | "windowsmediaplayer" | "media" => Some(("wmplayer", "Windows Media Player")),
+    "music" | "musicplayer" => Some(("music", "Music player")),
+    "notepad" => Some(("notepad", "Notepad")),
+    "explorer" | "fileexplorer" => Some(("explorer", "File Explorer")),
+    "calculator" | "calc" => Some(("calculator", "Calculator")),
+    "paint" | "mspaint" => Some(("paint", "Paint")),
+    _ => None,
+  }
+}
+
 fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
   match action.kind.as_str() {
     "open_app" => vec![
       "Check whether the target app is installed on this Windows machine.".into(),
-      "Try a different app alias like: chrome, edge, notepad, explorer, calculator, paint.".into(),
+      "Try a different app alias like: chrome, edge, firefox, spotify, music, vlc, wmplayer, notepad, explorer, calculator, paint.".into(),
       "If needed, run the command once manually and retry from xixi.".into(),
     ],
     "open_folder" => vec![
@@ -1833,6 +2091,51 @@ mod tests {
         .map(|action| action.target.as_str()),
       Some("calculator")
     );
+  }
+
+  #[test]
+  fn plans_music_player_request() {
+    let plan = plan_user_request("open music player".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("open_app")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("music")
+    );
+  }
+
+  #[test]
+  fn plans_type_text_request_with_high_risk_script() {
+    let plan = plan_user_request("type hello from xixi".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "safe_desktop_action.py");
+    assert_eq!(payload.input, Some("type:hello from xixi".to_string()));
+  }
+
+  #[test]
+  fn resolves_firefox_alias() {
+    let alias = resolve_app_alias("firefox");
+    assert_eq!(alias, Some(("firefox", "Mozilla Firefox")));
   }
 
   #[test]

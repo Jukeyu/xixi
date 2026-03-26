@@ -220,6 +220,9 @@ const quickActions = [
   'Search web Tauri tray icon',
   'Run skill screen_watch_ocr keyword=stock duration=15',
   'Run skill desktop_action_safe click',
+  'Type hello from xixi',
+  'Hotkey ctrl,s',
+  'Watch screen stock',
   'Open app calculator',
   'Open xixi folder',
 ]
@@ -231,19 +234,25 @@ const supportedCommands = [
   'Open weather',
   'Open Chrome',
   'Open Edge',
+  'Open app firefox',
   'Open Notepad',
   'Open Explorer',
+  'Open music player',
   'Open app calculator',
   'Open app paint',
   'Open folder downloads',
   'Open folder desktop',
   'Open site <domain>',
   'Search web <query>',
+  'Type <text>',
+  'Press key <name>',
+  'Hotkey <key1,key2>',
+  'Watch screen <keyword>',
   'Run skill <id> [input]',
   'Open skills folder',
 ]
 
-const petPoses = ['sit', 'blink', 'stretch', 'play', 'sleep'] as const
+const petPoses = ['sit', 'blink', 'stretch', 'play', 'sleep', 'jump', 'dance', 'listen'] as const
 type PetPose = (typeof petPoses)[number]
 
 function makeId(prefix: string) {
@@ -1066,12 +1075,23 @@ function App() {
   }
 
   if (isPetWindow) {
-    const poseText: Record<PetPose, string> = {
+    const poseText: Partial<Record<PetPose, string>> = {
       sit: '小橘猫待命中，双击我回到聊天窗口。',
       blink: '我在眨眼观察屏幕动静。',
       stretch: '伸个懒腰，继续帮你执行任务。',
       play: '尾巴摆动中，我随时可以开工。',
       sleep: '浅睡眠巡航，唤醒后继续协助你。',
+    }
+
+    const readablePoseText: Record<PetPose, string> = {
+      sit: poseText.sit ?? 'Orange cat on standby. Double-click to reopen chat.',
+      blink: poseText.blink ?? 'Blink mode. Watching your screen context.',
+      stretch: poseText.stretch ?? 'Stretch mode. Ready for the next command.',
+      play: poseText.play ?? 'Play mode. Tail moving while waiting for tasks.',
+      sleep: poseText.sleep ?? 'Light nap mode. Wake me when needed.',
+      jump: 'Jump mode. High energy and ready to move.',
+      dance: 'Dance mode. A trendy move loop is active.',
+      listen: 'Listen mode. Focused and waiting for your instruction.',
     }
 
     return (
@@ -1080,7 +1100,12 @@ function App() {
         onMouseDown={startPetDragging}
         onDoubleClick={() => void restoreFromPet()}
       >
-        <div className="pet-widget-bubble">{poseText[petPose]}</div>
+        <div className="pet-widget-bubble">{readablePoseText[petPose]}</div>
+        <div className="pet-widget-fx" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
         <div className={`orange-cat orange-cat--${petPose}`}>
           <div className="orange-cat__tail" />
           <div className="orange-cat__body">
