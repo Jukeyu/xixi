@@ -72,6 +72,12 @@ type LocalSkillSummary = {
   aliases: string[]
 }
 
+type PendingAction = {
+  request: string
+  riskLevel: string
+  action: LocalAction
+}
+
 type ThemeMode = 'light' | 'dark'
 
 type SettingsState = {
@@ -273,6 +279,7 @@ function App() {
   })
   const [actionLogs, setActionLogs] = useState<ActionLogEntry[]>(() => readStoredActionLogs())
   const [lastFailedAction, setLastFailedAction] = useState<LocalAction | null>(null)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [localSkills, setLocalSkills] = useState<LocalSkillSummary[]>([])
   const [skillsFolderPath, setSkillsFolderPath] = useState('')
   const [weatherReloadTick, setWeatherReloadTick] = useState(0)
@@ -529,20 +536,37 @@ function App() {
         plan.can_execute_directly &&
         plan.suggested_action
       ) {
-        await executePlannedAction(plan.suggested_action, trimmed)
+        if (plan.risk_level === 'high-risk') {
+          setPendingAction({
+            request: trimmed,
+            riskLevel: plan.risk_level,
+            action: plan.suggested_action,
+          })
+          appendAssistantMessage(
+            'High-risk action detected. Click "Run high-risk action now" to execute it.',
+            `${plan.suggested_action.kind} -> ${plan.suggested_action.target}`
+          )
+        } else {
+          setPendingAction(null)
+          await executePlannedAction(plan.suggested_action, trimmed)
+        }
       } else if (!settings.autoRunSupported && plan.can_execute_directly) {
         if (plan.suggested_action) {
           setLastFailedAction(plan.suggested_action)
         }
+        setPendingAction(null)
         appendAssistantMessage(
           'The command is supported, but auto-run is off in settings. Turn it on to execute immediately.',
           'Manual safety mode is active'
         )
       } else if (!isDesktop && plan.can_execute_directly) {
+        setPendingAction(null)
         appendAssistantMessage(
           'This preview can show the plan, but only the desktop app can execute real system actions.',
           'Browser preview does not touch your desktop'
         )
+      } else {
+        setPendingAction(null)
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Unknown error'
@@ -595,10 +619,41 @@ function App() {
     }
   }
 
+  const runPendingAction = async () => {
+    if (!pendingAction || isBusy) {
+      return
+    }
+
+    setIsBusy(true)
+    try {
+      appendAssistantMessage(
+        'Executing approved high-risk action.',
+        `${pendingAction.action.kind} -> ${pendingAction.action.target}`
+      )
+      await executePlannedAction(pendingAction.action, pendingAction.request)
+      setPendingAction(null)
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  const cancelPendingAction = () => {
+    if (!pendingAction) {
+      return
+    }
+
+    appendAssistantMessage(
+      'High-risk action canceled.',
+      `${pendingAction.action.kind} -> ${pendingAction.action.target}`
+    )
+    setPendingAction(null)
+  }
+
   const resetConversation = () => {
     setMessages(initialMessages)
     setActionQueue(initialQueue)
     setLastFailedAction(null)
+    setPendingAction(null)
   }
 
   const toggleTheme = () => {
@@ -917,6 +972,36 @@ function App() {
                 >
                   Retry last failed action
                 </button>
+              </div>
+            ) : null}
+
+            {pendingAction ? (
+              <div className="pending-action-box">
+                <div className="section-title">High-risk gate</div>
+                <p>
+                  Pending: <strong>{pendingAction.action.label}</strong>
+                </p>
+                <p>
+                  {pendingAction.action.kind}: {pendingAction.action.target}
+                </p>
+                <div className="pending-action-box__buttons">
+                  <button
+                    type="button"
+                    className="retry-button"
+                    onClick={() => void runPendingAction()}
+                    disabled={isBusy}
+                  >
+                    Run high-risk action now
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={cancelPendingAction}
+                    disabled={isBusy}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             ) : null}
 

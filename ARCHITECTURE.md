@@ -54,6 +54,7 @@ This document describes the current architecture of the runnable desktop build.
 - local skill loading from `%LOCALAPPDATA%\\xixi\\skills`
 - local script skills from `%LOCALAPPDATA%\\xixi\\skills\\scripts`
 - local script run logs from `%LOCALAPPDATA%\\xixi\\skills\\runs`
+- high-risk command gate in UI (manual approval before execution)
 - executable adapters:
   - folder open
   - URL open and web search URL launch

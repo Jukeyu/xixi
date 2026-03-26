@@ -105,6 +105,7 @@ npm run test:smoke
 - 脚本运行日志：`%LOCALAPPDATA%\xixi\skills\runs`
 - 命令格式：`run skill <skill_id> [input]`
 - 示例：`run skill open_github`、`run skill search_stock_news tsla`、`run skill screen_watch_ocr keyword=stock duration=20`、`run skill desktop_action_safe click`
+- `high-risk` 技能会在 UI 中触发二次确认（不会自动执行）
 
 技能格式与示例见：
 

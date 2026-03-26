@@ -103,6 +103,7 @@ run skill desktop_action_safe hotkey:ctrl,s
 ```
 
 `desktop_action_safe` blocks a small set of dangerous combinations by default and logs every run.
+Because it is marked `high-risk`, the desktop UI requires manual confirmation before execution.
 
 ## Python Dependencies
 

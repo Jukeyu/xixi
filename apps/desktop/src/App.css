@@ -471,6 +471,25 @@
   color: var(--foreground-soft);
 }
 
+.pending-action-box {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(231, 91, 91, 0.14);
+  border: 1px solid rgba(231, 91, 91, 0.3);
+}
+
+.pending-action-box p {
+  margin: 8px 0 0;
+  color: var(--foreground-soft);
+}
+
+.pending-action-box__buttons {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
 .retry-button {
   margin-top: 12px;
   width: 100%;
@@ -487,6 +506,10 @@
 .retry-button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.pending-action-box .retry-button {
+  margin-top: 0;
 }
 
 .log-list {

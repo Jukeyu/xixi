@@ -23,7 +23,7 @@
 ## Phase 3 - Safety + UX Hardening
 
 - [ ] Risk classification for command categories
-- [ ] Confirm-before-run on medium/high-risk operations
+- [x] Confirm-before-run on high-risk operations
 - [ ] Model API settings panel (provider, key, model selection)
 - [ ] Permission profile UI for users
 - [ ] Accessibility improvements for seniors and low-vision users
