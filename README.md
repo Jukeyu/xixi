@@ -1,71 +1,70 @@
 # xixi / 晰晰
 
-`xixi` is an open-source desktop AI assistant for non-coders.
+`xixi` 是一个开源的**桌面宠物应用程序**。  
+它的目标不是做一个只会聊天的壳，而是逐步成长为一个能通过聊天或语音，帮助用户在电脑上完成真实操作的助手。
 
-This project is building a real desktop companion that can chat, explain actions clearly, and run safe local automation on Windows.
-It is not a toy chat mockup: every supported command in the UI is backed by executable code.
+## 一句话定位
 
-## Why This Project Matters
+一个以“桌面宠物”形态呈现的 AI 助手：可聊天、可执行技能、可安全操作电脑。
 
-Most AI apps can talk but cannot operate a real personal computer.
-Most automation tools can operate a computer but are hard for beginners.
+## 我们在做什么
 
-`xixi` combines both:
+我们希望 `xixi` 最终具备这条能力链路：
 
-- a desktop-first AI chat workspace
-- transparent action planning
-- safe local command execution
-- settings that normal users can understand
-- a contributor-friendly architecture for skills and specialist agents
+1. 启动应用后可配置模型 API（对话框/设置面板）。
+2. 用户通过聊天或语音下达任务。
+3. `xixi` 将任务分解为可审计的技能步骤。
+4. 在安全边界内执行真实电脑动作，并反馈结果。
 
-## Current Real Capabilities (March 27, 2026)
+## 使命与愿景
 
-The current build can:
+### 使命
 
-- run as a real Windows desktop app (Tauri)
-- minimize / maximize / close via real desktop window APIs
-- hide to system tray on close and restore from tray menu/icon
-- switch light/dark theme and persist settings
-- show live weather data from Open-Meteo
-- parse and execute supported desktop commands (including parameterized forms)
-- keep structured execution logs with per-action IDs, timing, and recovery hints
-- provide retry flow for failed actions in UI
-- reject unsupported commands honestly (no fake success)
+把“能操作电脑的 AI”做成普通人可用、可理解、可托付的产品。
 
-Supported command examples today:
+### 愿景
 
-- `Open QMDownload`
-- `Open xixi folder`
-- `Open GitHub`
-- `Open weather`
-- `Open Chrome`
-- `Open Edge`
-- `Open Notepad`
-- `Open Explorer`
-- `Open app calculator`
-- `Open app paint`
-- `Open folder downloads`
-- `Open folder desktop`
-- `Open site openai.com`
-- `Search web tauri tray icon`
+让老年人、上肢行动不便用户、非技术用户，都能通过自然语言完成日常电脑任务，而不是被复杂界面阻挡。
 
-Chinese phrase support is also wired for common variants like:
+## 当前状态（真实能力，2026-03-27）
 
-- `打开 github`
-- `打开记事本`
-- `打开资源管理器`
+目前仓库是**可运行的 Phase 2 原型**，已实现：
 
-## Product Direction
+- Windows 桌面应用（Tauri + React）
+- 聊天输入与真实命令规划
+- 白名单本地动作执行（文件夹、网站、应用启动等）
+- 参数化指令（例如 `open site <domain>`、`search web <query>`）
+- 托盘驻留（关闭窗口隐藏到托盘）
+- 结构化执行日志与失败重试
+- 明确拒绝未实现指令（不做“伪成功”）
 
-Goal: build a desktop AI pet that feels alive and useful, not gimmicky.
+## 还未完成（但正在推进）
 
-Core direction:
+以下能力是目标方向，当前版本尚未全部实现：
 
-- pet presence + chat workspace
-- natural language to desktop actions
-- clear safety behavior (small tasks direct, risky tasks confirm)
-- plug-in points for skills and specialist agents
-- beginner-friendly UX and explanations
+- 模型 API 填写与多模型切换面板
+- 技能注册中心（安装/卸载/权限管理）
+- 语音输入与语音指令执行链路
+- 更完整的风险分级与高风险操作二次确认
+
+## 长期方向（含你提到的高级场景）
+
+我们会把高级能力放在**安全与合规优先**前提下推进：
+
+- 电脑自主操作（聊天/语音驱动）
+- 任务型技能生态（可扩展）
+- 股票观察与交易辅助（研究与策略建议）
+- 交易执行仅在明确授权、风控策略、可追溯日志下进行
+
+## 为什么值得加入
+
+这是一个技术价值和社会价值同时很高的方向：
+
+- 技术上：LLM + 桌面自动化 + 技能系统 + 安全工程
+- 产品上：桌面宠物形态、长期可用而非演示
+- 社会上：面向老年人与行动受限人群的真实可访问性工具
+
+如果你希望做一个“不是花架子、真的能帮到人”的 AI 项目，欢迎一起推进。
 
 ## Quick Start
 
@@ -75,79 +74,43 @@ npm install
 npm run tauri:dev
 ```
 
-Build packages:
+## Build
 
 ```bash
 cd apps/desktop
 npm run tauri:build
 ```
 
-## Publish to GitHub
+构建产物：
 
-Once `gh auth login` is completed on this machine, publish with:
-
-```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\publish-github.ps1 -RepoName xixi
-```
-
-This script will:
-
-- create the GitHub repository (if `origin` does not exist)
-- set `origin`
-- push `main`
+- `apps/desktop/src-tauri/target/release/app.exe`
+- `apps/desktop/src-tauri/target/release/bundle/msi/...`
+- `apps/desktop/src-tauri/target/release/bundle/nsis/...`
 
 ## Test Workflow
 
-Local smoke test:
-
 ```bash
 cd apps/desktop
+npm run lint
 npm run test:smoke
 ```
 
-This runs:
-
-- TypeScript checks
-- frontend build
-- Rust unit tests
-
-CI is configured in:
-
-- `.github/workflows/ci.yml`
-
 ## Repo Structure
 
-- `apps/desktop`: Tauri + React desktop app
-- `docs/design`: design records
-- `docs/plans`: implementation plans
-- `.github/workflows`: CI pipeline
-- `ARCHITECTURE.md`: runtime architecture overview
-- `CONTRIBUTING.md`: contribution workflow
-- `ROADMAP.md`: staged project milestones
+- `apps/desktop`: Tauri + React 桌面应用
+- `docs/design`: 设计记录
+- `docs/plans`: 实施计划
+- `.github/workflows`: CI
+- `ARCHITECTURE.md`: 当前架构说明
+- `ROADMAP.md`: 里程碑路线图
+- `CONTRIBUTING.md`: 协作说明
 
-## Contributing
+## Collaboration
 
-This project is intentionally open for collaboration.
-If you are strong in any of these areas, your help is high impact:
+欢迎提 Issue / PR，尤其是以下方向：
 
-- desktop automation
-- LLM command planning
-- Tauri and Rust systems work
-- React UX for non-technical users
-- skill/plugin architecture
-- QA and safety validation
-
-Good first contribution directions:
-
-1. Add one new real desktop action end-to-end (planner + executor + UI trace).
-2. Expand multilingual intent parsing while keeping strict execution honesty.
-3. Improve accessibility and readability for low-vision users.
-4. Build skill registry and external skill packaging flow.
-5. Add deterministic test cases for edge command phrasing.
-
-## Open Collaboration Call
-
-If you want to help build a practical AI desktop assistant that beginners can actually use, join this project.
-
-This is not about flashy demos.
-This is about shipping a reliable, understandable, open desktop AI system together.
+- 桌面技能执行器扩展（真实动作适配）
+- 多语言与自然语言理解（中英文混合场景）
+- 可访问性（大字体、低视力、老年友好、语音辅助）
+- 风险控制与审计日志
+- 语音交互与技能编排
