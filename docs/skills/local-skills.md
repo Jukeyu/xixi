@@ -18,11 +18,14 @@ Examples:
 ```text
 run skill open_github
 run skill open_firefox
+run skill open_vscode
+run skill open_terminal
 run skill open_music_player
 run skill open_tradingview
 run skill search_stock_news tsla
 run skill screen_watch_ocr keyword=stock duration=20
 run skill desktop_action_safe click
+run skill desktop_skill_ops rightclick
 ```
 
 ## JSON Schema (Current)
@@ -102,6 +105,9 @@ run skill desktop_action_safe click
 run skill desktop_action_safe move:960,540
 run skill desktop_action_safe type:hello from xixi
 run skill desktop_action_safe hotkey:ctrl,s
+run skill desktop_skill_ops rightclick
+run skill desktop_skill_ops scroll:-400
+run skill desktop_skill_ops wait:1.2
 ```
 
 `desktop_action_safe` blocks a small set of dangerous combinations by default and logs every run.
@@ -112,10 +118,15 @@ You can also use direct natural command phrases in chat (without `run skill`), f
 ```text
 open music player
 open app firefox
+open app vscode
+open terminal
 type hello from xixi
 press key enter
 hotkey ctrl,s
 watch screen stock
+move mouse 960,540
+right click
+scroll down 400
 ```
 
 ## Python Dependencies

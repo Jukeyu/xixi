@@ -421,6 +421,41 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if contains_any(&lowered, &["open vscode", "open code", "vscode", "visual studio code"]) {
+    return direct_plan(
+      "I can try to launch Visual Studio Code right now.",
+      vec![
+        step("plan-vscode-1", "Match command", "Mapped request to VS Code launch", "done"),
+        step(
+          "plan-vscode-2",
+          "Run app launch",
+          "Try known VS Code executable locations",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "vscode".into(),
+        label: "Visual Studio Code".into(),
+      },
+    );
+  }
+
+  if contains_any(&lowered, &["open terminal", "terminal", "open powershell", "powershell"]) {
+    return direct_plan(
+      "I can launch a terminal window right now.",
+      vec![
+        step("plan-terminal-1", "Match command", "Mapped request to terminal launch", "done"),
+        step("plan-terminal-2", "Run app launch", "Start PowerShell terminal", "ready"),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "powershell".into(),
+        label: "PowerShell".into(),
+      },
+    );
+  }
+
   if contains_any(&lowered, &["open notepad", "notepad"])
     || contains_any(&compact, &["打开记事本", "打开notepad"])
   {
@@ -525,7 +560,7 @@ fn plan_user_request(request: String) -> CommandPlan {
     return unsupported_parameter_plan(
       "app alias",
       &app_query,
-      "Try one of: chrome, edge, firefox, notepad, explorer, calculator, paint, spotify, music, vlc, wmplayer.",
+      "Try one of: chrome, edge, firefox, vscode, terminal, powershell, cmd, taskmgr, notepad, explorer, calculator, paint, spotify, music, vlc, wmplayer.",
     );
   }
 
@@ -612,6 +647,164 @@ fn plan_user_request(request: String) -> CommandPlan {
           action,
         );
       }
+    }
+  }
+
+  if let Some(raw_move) =
+    extract_after_prefix_case_insensitive(trimmed, &["move mouse ", "mouse move ", "move to "])
+  {
+    if let Some((x, y)) = parse_coordinate_pair(&raw_move) {
+      if let Ok(action) = build_run_script_action(
+        "desktop_skill_ops.py",
+        Some(format!("move:{x},{y}")),
+        "Desktop Skill Ops (move mouse)",
+      ) {
+        return action_plan(
+          "I can move the mouse cursor to those coordinates.",
+          "high-risk",
+          vec![
+            step("plan-mouse-move-1", "Parse coordinates", &format!("Resolved x={x}, y={y}"), "done"),
+            step("plan-mouse-move-2", "Build script payload", "Prepared move:* command", "done"),
+            step("plan-mouse-move-3", "Run local script", "Execute cursor move action", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_scroll_up) = extract_after_prefix_case_insensitive(trimmed, &["scroll up ", "scrollup "]) {
+    let amount = parse_first_int(&raw_scroll_up).unwrap_or(350).abs();
+    if let Ok(action) = build_run_script_action(
+      "desktop_skill_ops.py",
+      Some(format!("scroll:{amount}")),
+      "Desktop Skill Ops (scroll up)",
+    ) {
+      return action_plan(
+        "I can scroll the active window upward.",
+        "high-risk",
+        vec![
+          step("plan-scroll-up-1", "Parse amount", &format!("Scroll amount={amount}"), "done"),
+          step("plan-scroll-up-2", "Build script payload", "Prepared scroll:* command", "done"),
+          step("plan-scroll-up-3", "Run local script", "Execute scroll action", "ready"),
+        ],
+        action,
+      );
+    }
+  }
+
+  if let Some(raw_scroll_down) = extract_after_prefix_case_insensitive(trimmed, &["scroll down ", "scrolldown "]) {
+    let amount = parse_first_int(&raw_scroll_down).unwrap_or(350).abs();
+    if let Ok(action) = build_run_script_action(
+      "desktop_skill_ops.py",
+      Some(format!("scroll:-{amount}")),
+      "Desktop Skill Ops (scroll down)",
+    ) {
+      return action_plan(
+        "I can scroll the active window downward.",
+        "high-risk",
+        vec![
+          step("plan-scroll-down-1", "Parse amount", &format!("Scroll amount={amount}"), "done"),
+          step("plan-scroll-down-2", "Build script payload", "Prepared scroll:* command", "done"),
+          step("plan-scroll-down-3", "Run local script", "Execute scroll action", "ready"),
+        ],
+        action,
+      );
+    }
+  }
+
+  if lowered == "double click" || lowered == "double-click" || lowered == "mouse double click" {
+    if let Ok(action) = build_run_script_action(
+      "desktop_skill_ops.py",
+      Some("doubleclick".to_string()),
+      "Desktop Skill Ops (double click)",
+    ) {
+      return action_plan(
+        "I can execute a double-click on the current cursor position.",
+        "high-risk",
+        vec![
+          step("plan-doubleclick-1", "Match command", "Detected double-click intent", "done"),
+          step("plan-doubleclick-2", "Build script payload", "Prepared doubleclick command", "done"),
+          step("plan-doubleclick-3", "Run local script", "Execute double-click action", "ready"),
+        ],
+        action,
+      );
+    }
+  }
+
+  if lowered == "right click" || lowered == "right-click" || lowered == "mouse right click" {
+    if let Ok(action) = build_run_script_action(
+      "desktop_skill_ops.py",
+      Some("rightclick".to_string()),
+      "Desktop Skill Ops (right click)",
+    ) {
+      return action_plan(
+        "I can execute a right-click on the current cursor position.",
+        "high-risk",
+        vec![
+          step("plan-rightclick-1", "Match command", "Detected right-click intent", "done"),
+          step("plan-rightclick-2", "Build script payload", "Prepared rightclick command", "done"),
+          step("plan-rightclick-3", "Run local script", "Execute right-click action", "ready"),
+        ],
+        action,
+      );
+    }
+  }
+
+  if lowered == "click" || lowered == "left click" || lowered == "mouse click" || lowered == "click mouse" {
+    if let Ok(action) = build_run_script_action(
+      "desktop_skill_ops.py",
+      Some("click".to_string()),
+      "Desktop Skill Ops (click)",
+    ) {
+      return action_plan(
+        "I can execute a left-click on the current cursor position.",
+        "high-risk",
+        vec![
+          step("plan-click-1", "Match command", "Detected left-click intent", "done"),
+          step("plan-click-2", "Build script payload", "Prepared click command", "done"),
+          step("plan-click-3", "Run local script", "Execute click action", "ready"),
+        ],
+        action,
+      );
+    }
+  }
+
+  if lowered == "scroll up" {
+    if let Ok(action) = build_run_script_action(
+      "desktop_skill_ops.py",
+      Some("scroll:350".to_string()),
+      "Desktop Skill Ops (scroll up)",
+    ) {
+      return action_plan(
+        "I can scroll the active window upward.",
+        "high-risk",
+        vec![
+          step("plan-scroll-up-default-1", "Match command", "Detected default scroll-up command", "done"),
+          step("plan-scroll-up-default-2", "Build script payload", "Prepared scroll:350 command", "done"),
+          step("plan-scroll-up-default-3", "Run local script", "Execute scroll action", "ready"),
+        ],
+        action,
+      );
+    }
+  }
+
+  if lowered == "scroll down" {
+    if let Ok(action) = build_run_script_action(
+      "desktop_skill_ops.py",
+      Some("scroll:-350".to_string()),
+      "Desktop Skill Ops (scroll down)",
+    ) {
+      return action_plan(
+        "I can scroll the active window downward.",
+        "high-risk",
+        vec![
+          step("plan-scroll-down-default-1", "Match command", "Detected default scroll-down command", "done"),
+          step("plan-scroll-down-default-2", "Build script payload", "Prepared scroll:-350 command", "done"),
+          step("plan-scroll-down-default-3", "Run local script", "Execute scroll action", "ready"),
+        ],
+        action,
+      );
     }
   }
 
@@ -1235,6 +1428,113 @@ if __name__ == '__main__':
 "#,
   )?;
 
+  ensure_default_script(
+    &scripts_dir.join("desktop_skill_ops.py"),
+    r#"import datetime
+import sys
+import time
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def blocked_command(raw: str) -> bool:
+    lowered = raw.lower().replace(" ", "")
+    blocked = [
+        "hotkey:alt,f4",
+        "hotkey:win,r",
+        "hotkey:win,x",
+        "hotkey:ctrl,alt,del",
+        "press:delete",
+    ]
+    return any(lowered.startswith(item) for item in blocked)
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    if not raw:
+        log("usage: move:x,y | click | doubleclick | rightclick | scroll:n | type:text | press:key | hotkey:key1,key2 | wait:seconds")
+        raise SystemExit(1)
+
+    if blocked_command(raw):
+        log(f"blocked dangerous command: {raw}")
+        raise SystemExit(2)
+
+    try:
+        import pyautogui
+    except Exception as e:
+        log("missing dependency. install with:")
+        log("pip install pyautogui")
+        log(f"import error: {e}")
+        raise SystemExit(1)
+
+    pyautogui.FAILSAFE = True
+    pyautogui.PAUSE = 0.08
+
+    cmd = raw.strip()
+    lowered = cmd.lower()
+    log(f"desktop_skill_ops received: {cmd}")
+
+    if lowered.startswith("move:"):
+        values = cmd.split(":", 1)[1]
+        x_text, y_text = [v.strip() for v in values.split(",", 1)]
+        pyautogui.moveTo(int(x_text), int(y_text), duration=0.2)
+        log("ok move")
+        return
+
+    if lowered == "click":
+        pyautogui.click()
+        log("ok click")
+        return
+
+    if lowered == "doubleclick":
+        pyautogui.doubleClick()
+        log("ok doubleclick")
+        return
+
+    if lowered == "rightclick":
+        pyautogui.rightClick()
+        log("ok rightclick")
+        return
+
+    if lowered.startswith("scroll:"):
+        amount = int(cmd.split(":", 1)[1].strip())
+        pyautogui.scroll(amount)
+        log(f"ok scroll {amount}")
+        return
+
+    if lowered.startswith("wait:"):
+        seconds = float(cmd.split(":", 1)[1].strip())
+        seconds = min(5.0, max(0.0, seconds))
+        time.sleep(seconds)
+        log(f"ok wait {seconds}")
+        return
+
+    if lowered.startswith("type:"):
+        text = cmd.split(":", 1)[1]
+        pyautogui.typewrite(text, interval=0.02)
+        log("ok type")
+        return
+
+    if lowered.startswith("press:"):
+        key = cmd.split(":", 1)[1].strip()
+        pyautogui.press(key)
+        log(f"ok press {key}")
+        return
+
+    if lowered.startswith("hotkey:"):
+        keys = [k.strip() for k in cmd.split(":", 1)[1].split(",") if k.strip()]
+        pyautogui.hotkey(*keys)
+        log(f"ok hotkey {keys}")
+        return
+
+    log(f"unknown command: {cmd}")
+    raise SystemExit(1)
+
+if __name__ == '__main__':
+    main()
+"#,
+  )?;
+
   Ok(())
 }
 
@@ -1325,6 +1625,26 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       aliases: Some(vec!["firefox".into(), "mozilla".into()]),
     },
     LocalSkillDefinition {
+      id: "open_vscode".into(),
+      name: "Open VS Code".into(),
+      description: "Launch Visual Studio Code.".into(),
+      kind: "open_app".into(),
+      target_template: "vscode".into(),
+      label_template: Some("Visual Studio Code".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["vscode".into(), "code".into()]),
+    },
+    LocalSkillDefinition {
+      id: "open_terminal".into(),
+      name: "Open Terminal".into(),
+      description: "Launch a PowerShell terminal window.".into(),
+      kind: "open_app".into(),
+      target_template: "powershell".into(),
+      label_template: Some("PowerShell".into()),
+      risk_level: Some("low-risk".into()),
+      aliases: Some(vec!["terminal".into(), "powershell".into()]),
+    },
+    LocalSkillDefinition {
       id: "open_music_player".into(),
       name: "Open Music Player".into(),
       description: "Launch a local music player (Spotify/VLC/WMP fallback).".into(),
@@ -1373,6 +1693,16 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       label_template: Some("Desktop Action Safe".into()),
       risk_level: Some("high-risk".into()),
       aliases: Some(vec!["pcaction".into(), "桌面操作".into(), "键鼠操作".into()]),
+    },
+    LocalSkillDefinition {
+      id: "desktop_skill_ops".into(),
+      name: "Desktop Skill Ops".into(),
+      description: "Richer desktop skill actions: move/click/right-click/scroll/type/hotkey.".into(),
+      kind: "run_script".into(),
+      target_template: "desktop_skill_ops.py".into(),
+      label_template: Some("Desktop Skill Ops".into()),
+      risk_level: Some("high-risk".into()),
+      aliases: Some(vec!["desktopops".into(), "mouseops".into(), "keyboardops".into()]),
     },
   ]
 }
@@ -1436,6 +1766,10 @@ fn open_app(target: &str, label: &str) -> Result<(String, Vec<String>), String> 
       r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
       "firefox.exe",
     ]),
+    "vscode" => try_spawn_vscode(),
+    "powershell" | "terminal" => Command::new("powershell.exe").spawn().is_ok(),
+    "cmd" => Command::new("cmd.exe").spawn().is_ok(),
+    "taskmgr" => Command::new("taskmgr.exe").spawn().is_ok(),
     "spotify" => try_spawn_spotify(),
     "vlc" => try_spawn_any(&[
       r"C:\Program Files\VideoLAN\VLC\vlc.exe",
@@ -1564,6 +1898,25 @@ fn try_spawn_spotify() -> bool {
   try_spawn_strings(&candidates)
 }
 
+fn try_spawn_vscode() -> bool {
+  let mut candidates = vec![
+    r"C:\Program Files\Microsoft VS Code\Code.exe".to_string(),
+    r"C:\Program Files (x86)\Microsoft VS Code\Code.exe".to_string(),
+    "code.exe".to_string(),
+  ];
+  if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+    candidates.push(
+      Path::new(&local_app_data)
+        .join("Programs")
+        .join("Microsoft VS Code")
+        .join("Code.exe")
+        .to_string_lossy()
+        .into_owned(),
+    );
+  }
+  try_spawn_strings(&candidates)
+}
+
 fn try_spawn_music_player() -> bool {
   try_spawn_spotify()
     || try_spawn_any(&[
@@ -1651,6 +2004,26 @@ fn extract_after_prefix_case_insensitive(source: &str, prefixes: &[&str]) -> Opt
       .strip_prefix(prefix)
       .map(|_| source[prefix.len()..].trim().to_string())
   })
+}
+
+fn parse_first_int(raw: &str) -> Option<i32> {
+  raw
+    .split(|ch: char| !ch.is_ascii_digit() && ch != '-')
+    .find(|token| !token.is_empty())
+    .and_then(|token| token.parse::<i32>().ok())
+}
+
+fn parse_coordinate_pair(raw: &str) -> Option<(i32, i32)> {
+  let numbers = raw
+    .split(|ch: char| !ch.is_ascii_digit() && ch != '-')
+    .filter(|token| !token.is_empty())
+    .filter_map(|token| token.parse::<i32>().ok())
+    .take(2)
+    .collect::<Vec<_>>();
+  if numbers.len() < 2 {
+    return None;
+  }
+  Some((numbers[0], numbers[1]))
 }
 
 fn normalize_site_target(raw_target: &str) -> (String, String) {
@@ -1855,6 +2228,10 @@ fn resolve_app_alias(query: &str) -> Option<(&'static str, &'static str)> {
     "edge" => Some(("edge", "Microsoft Edge")),
     "browser" | "defaultbrowser" => Some(("edge", "Browser (Microsoft Edge)")),
     "firefox" | "mozilla" => Some(("firefox", "Mozilla Firefox")),
+    "vscode" | "code" | "visualstudiocode" => Some(("vscode", "Visual Studio Code")),
+    "terminal" | "powershell" => Some(("powershell", "PowerShell")),
+    "cmd" | "commandprompt" => Some(("cmd", "Command Prompt")),
+    "taskmgr" | "taskmanager" => Some(("taskmgr", "Task Manager")),
     "spotify" => Some(("spotify", "Spotify")),
     "vlc" | "videolan" => Some(("vlc", "VLC Player")),
     "wmplayer" | "windowsmediaplayer" | "media" => Some(("wmplayer", "Windows Media Player")),
@@ -1871,7 +2248,7 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
   match action.kind.as_str() {
     "open_app" => vec![
       "Check whether the target app is installed on this Windows machine.".into(),
-      "Try a different app alias like: chrome, edge, firefox, spotify, music, vlc, wmplayer, notepad, explorer, calculator, paint.".into(),
+      "Try a different app alias like: chrome, edge, firefox, vscode, terminal, powershell, cmd, taskmgr, spotify, music, vlc, wmplayer, notepad, explorer, calculator, paint.".into(),
       "If needed, run the command once manually and retry from xixi.".into(),
     ],
     "open_folder" => vec![
@@ -2177,9 +2554,65 @@ mod tests {
   }
 
   #[test]
+  fn plans_right_click_request_with_desktop_skill_ops() {
+    let plan = plan_user_request("right click".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "desktop_skill_ops.py");
+    assert_eq!(payload.input, Some("rightclick".to_string()));
+  }
+
+  #[test]
+  fn plans_move_mouse_request_with_coordinates() {
+    let plan = plan_user_request("move mouse 1200,720".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "desktop_skill_ops.py");
+    assert_eq!(payload.input, Some("move:1200,720".to_string()));
+  }
+
+  #[test]
   fn resolves_firefox_alias() {
     let alias = resolve_app_alias("firefox");
     assert_eq!(alias, Some(("firefox", "Mozilla Firefox")));
+  }
+
+  #[test]
+  fn resolves_vscode_alias() {
+    let alias = resolve_app_alias("vscode");
+    assert_eq!(alias, Some(("vscode", "Visual Studio Code")));
+  }
+
+  #[test]
+  fn resolves_terminal_alias() {
+    let alias = resolve_app_alias("terminal");
+    assert_eq!(alias, Some(("powershell", "PowerShell")));
   }
 
   #[test]
