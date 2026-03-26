@@ -3,18 +3,65 @@
     "Avenir Next", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #21150f;
-  background: #f7efe6;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --ui-font-scale: 1;
 
-  --accent: #ffb36a;
-  --accent-strong: #ff9340;
-  --text: #fff5ed;
-  --text-soft: rgba(255, 245, 237, 0.76);
-  --muted: rgba(255, 245, 237, 0.48);
+  --accent: #ffb85c;
+  --accent-strong: #ff9640;
+  --foreground: #2d211a;
+  --foreground-strong: #17110d;
+  --foreground-soft: #66554a;
+  --muted: #837469;
+  --app-background: #efe5db;
+  --workspace-background:
+    radial-gradient(circle at top left, rgba(255, 190, 126, 0.22), transparent 24%),
+    linear-gradient(180deg, #fff9f3 0%, #f4ece4 100%);
+  --sidebar-background: linear-gradient(180deg, #2d2019 0%, #1a1411 100%);
+  --panel-surface: rgba(255, 255, 255, 0.9);
+  --settings-surface: rgba(255, 251, 246, 0.98);
+  --panel-border: rgba(83, 60, 43, 0.14);
+  --surface-secondary: rgba(255, 248, 240, 0.82);
+  --panel-shadow: 0 20px 50px rgba(44, 28, 16, 0.1);
+  --chat-surface: rgba(255, 252, 248, 0.96);
+  --chat-bubble-assistant: #f0e2d2;
+  --chat-bubble-user: linear-gradient(180deg, #5b3824, #392216);
+  --chat-bubble-foreground: #2f1f16;
+  --composer-border: rgba(89, 62, 42, 0.12);
+  --input-background: #fffdf9;
+  --ghost-button-background: rgba(255, 250, 245, 0.86);
+  --status-background: rgba(255, 175, 94, 0.14);
+  --workspace-heading: #201711;
+}
+
+:root[data-theme='dark'] {
+  --accent: #ffb85c;
+  --accent-strong: #ff9640;
+  --foreground: #ece2da;
+  --foreground-strong: #fff8f1;
+  --foreground-soft: #c6b6ab;
+  --muted: #a99587;
+  --app-background: #120f0d;
+  --workspace-background:
+    radial-gradient(circle at top left, rgba(255, 167, 85, 0.18), transparent 22%),
+    linear-gradient(180deg, #1b1613 0%, #110d0b 100%);
+  --sidebar-background: linear-gradient(180deg, #2a1e18 0%, #17110f 100%);
+  --panel-surface: rgba(31, 24, 20, 0.9);
+  --settings-surface: rgba(26, 20, 17, 0.98);
+  --panel-border: rgba(255, 232, 214, 0.1);
+  --surface-secondary: rgba(255, 248, 240, 0.06);
+  --panel-shadow: 0 22px 56px rgba(0, 0, 0, 0.36);
+  --chat-surface: rgba(25, 19, 16, 0.96);
+  --chat-bubble-assistant: #2b221d;
+  --chat-bubble-user: linear-gradient(180deg, #8d5a34, #6c4327);
+  --chat-bubble-foreground: #efe3d8;
+  --composer-border: rgba(255, 233, 216, 0.08);
+  --input-background: rgba(255, 248, 240, 0.05);
+  --ghost-button-background: rgba(255, 248, 240, 0.05);
+  --status-background: rgba(255, 175, 94, 0.12);
+  --workspace-heading: #fff7ef;
 }
 
 * {
@@ -30,6 +77,9 @@ body,
 
 body {
   min-width: 320px;
+  background: var(--app-background);
+  color: var(--foreground);
+  font-size: calc(16px * var(--ui-font-scale));
 }
 
 button,
