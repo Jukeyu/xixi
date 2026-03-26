@@ -26,6 +26,7 @@
 - [x] Confirm-before-run on high-risk operations
 - [x] Model API settings panel and model chat mode (OpenAI-compatible endpoint)
 - [x] Permission profile UI for users (safe/balanced/advanced)
+- [x] GPT-style simplified chat layout + desktop pet multi-pose window (v1)
 - [ ] Accessibility improvements for seniors and low-vision users
 - [ ] Better multilingual command support
 

@@ -58,6 +58,7 @@ This document describes the current architecture of the runnable desktop build.
 - dual chat mode: command planner mode and model API chat mode
 - model API command: OpenAI-compatible `/chat/completions` via desktop Rust bridge
 - permission profiles in UI: safe, balanced, advanced
+- secondary pet window (`pet`) for desktop companion mode
 - executable adapters:
   - folder open
   - URL open and web search URL launch

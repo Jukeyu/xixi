@@ -243,6 +243,9 @@ const supportedCommands = [
   'Open skills folder',
 ]
 
+const petPoses = ['sit', 'blink', 'stretch', 'play', 'sleep'] as const
+type PetPose = (typeof petPoses)[number]
+
 function makeId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`
 }
@@ -362,6 +365,9 @@ function isActionAllowedByPermissionProfile(
 
 function App() {
   const isDesktop = '__TAURI_INTERNALS__' in window
+  const isPetWindow =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('pet') === '1'
   const runtimeMode = isDesktop ? 'Desktop shell' : 'Browser preview'
   const [desktopProfile, setDesktopProfile] = useState<DesktopProfile | null>(null)
   const [messages, setMessages] = useState(initialMessages)
@@ -386,6 +392,7 @@ function App() {
   const [lastFailedAction, setLastFailedAction] = useState<FailedActionState | null>(null)
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [apiSetupOpen, setApiSetupOpen] = useState(false)
+  const [petPose, setPetPose] = useState<PetPose>('sit')
   const [localSkills, setLocalSkills] = useState<LocalSkillSummary[]>([])
   const [skillsFolderPath, setSkillsFolderPath] = useState('')
   const [weatherReloadTick, setWeatherReloadTick] = useState(0)
@@ -545,6 +552,24 @@ function App() {
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [])
+
+  useEffect(() => {
+    if (!isPetWindow) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      setPetPose((current) => {
+        const next = petPoses[Math.floor(Math.random() * petPoses.length)]
+        if (next === current && petPoses.length > 1) {
+          return petPoses[(petPoses.indexOf(current) + 1) % petPoses.length]
+        }
+        return next
+      })
+    }, 2600)
+
+    return () => window.clearInterval(timer)
+  }, [isPetWindow])
 
   useEffect(() => {
     if (!pendingAction) {
@@ -1001,8 +1026,8 @@ function App() {
   }
 
   const handleMinimize = async () => {
-    if (!windowApi) return
-    await windowApi.minimize()
+    if (!isDesktop) return
+    await invoke('minimize_to_pet')
   }
 
   const handleToggleMaximize = async () => {
@@ -1026,8 +1051,76 @@ function App() {
     await invoke('quit_application')
   }
 
+  const restoreFromPet = async () => {
+    if (!isDesktop) {
+      return
+    }
+    await invoke('restore_main_from_pet')
+  }
+
+  const startPetDragging: React.MouseEventHandler<HTMLDivElement> = (event) => {
+    if (!isDesktop || !windowApi || event.button !== 0) {
+      return
+    }
+    void windowApi.startDragging()
+  }
+
+  if (isPetWindow) {
+    const poseText: Record<PetPose, string> = {
+      sit: '小橘猫待命中，双击我回到聊天窗口。',
+      blink: '我在眨眼观察屏幕动静。',
+      stretch: '伸个懒腰，继续帮你执行任务。',
+      play: '尾巴摆动中，我随时可以开工。',
+      sleep: '浅睡眠巡航，唤醒后继续协助你。',
+    }
+
+    return (
+      <div
+        className={`pet-widget-shell pet-widget-shell--${petPose}`}
+        onMouseDown={startPetDragging}
+        onDoubleClick={() => void restoreFromPet()}
+      >
+        <div className="pet-widget-bubble">{poseText[petPose]}</div>
+        <div className={`orange-cat orange-cat--${petPose}`}>
+          <div className="orange-cat__tail" />
+          <div className="orange-cat__body">
+            <div className="orange-cat__stripe orange-cat__stripe--a" />
+            <div className="orange-cat__stripe orange-cat__stripe--b" />
+            <div className="orange-cat__stripe orange-cat__stripe--c" />
+          </div>
+          <div className="orange-cat__head">
+            <div className="orange-cat__ear orange-cat__ear--left" />
+            <div className="orange-cat__ear orange-cat__ear--right" />
+            <div className="orange-cat__face">
+              <span className="orange-cat__eye orange-cat__eye--left" />
+              <span className="orange-cat__eye orange-cat__eye--right" />
+              <span className="orange-cat__nose" />
+            </div>
+          </div>
+          <div className="orange-cat__paws">
+            <span />
+            <span />
+          </div>
+        </div>
+        <div className="pet-widget-actions">
+          <button type="button" onClick={() => void restoreFromPet()}>
+            打开聊天
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setPetPose((current) => petPoses[(petPoses.indexOf(current) + 1) % petPoses.length])
+            }
+          >
+            换个形态
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="app-shell" onContextMenu={onContextMenu}>
+    <div className="app-shell app-shell--gpt" onContextMenu={onContextMenu}>
       <aside className="pet-panel">
         <div className="pet-card">
           <div className="pet-card__top">
@@ -1144,8 +1237,11 @@ function App() {
       <main className={`workspace ${settings.compactMode ? 'is-compact' : ''}`}>
         <header className="workspace-header">
           <div>
-            <span className="eyebrow">Phase 2 Prototype Workspace</span>
-            <h2>Readable and real</h2>
+            <span className="eyebrow">xixi Desktop Assistant</span>
+            <h2>xixi Chat</h2>
+            <div className="header-subtitle">
+              {settings.chatMode === 'model' ? 'Model chat mode' : 'Command mode'} | {permissionText}
+            </div>
           </div>
           <div className="header-actions">
             <button type="button" className="ghost-button" onClick={toggleTheme}>

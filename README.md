@@ -111,6 +111,12 @@ You can switch from command mode to model chat mode in Settings.
 - `Balanced`: allow apps and scripts, but block high-risk actions
 - `Advanced`: allow all current actions (high-risk still requires manual confirmation)
 
+## Desktop Pet Mode (v1)
+
+- Minimizing/hiding main window now shows a desktop pet window.
+- Pet is a code-drawn orange tabby with multi-pose state changes.
+- Double-click the pet or click `打开聊天` to restore main chat window.
+
 ## 自定义技能（你可以自己写）
 
 `xixi` 会从本地技能目录加载 JSON 技能文件，你可以自行扩展简单电脑操作。

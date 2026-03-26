@@ -13,7 +13,7 @@ use std::{
 use tauri::{
   menu::{Menu, MenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  Manager, WindowEvent,
+  Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 
 #[derive(Serialize)]
@@ -632,6 +632,16 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
 fn quit_application(app: tauri::AppHandle, state: tauri::State<AppRuntimeState>) {
   state.quitting.store(true, Ordering::Relaxed);
   app.exit(0);
+}
+
+#[tauri::command]
+fn minimize_to_pet(app: tauri::AppHandle) {
+  hide_main_window(&app);
+}
+
+#[tauri::command]
+fn restore_main_from_pet(app: tauri::AppHandle) {
+  show_main_window(&app);
 }
 
 fn direct_plan(reply: &str, steps: Vec<ActionItem>, action: LocalAction) -> CommandPlan {
@@ -1651,28 +1661,71 @@ fn now_unix_ms() -> u128 {
     .unwrap_or(0)
 }
 
-fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-  if let Some(window) = app.get_webview_window("main") {
+fn ensure_pet_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
+  if app.get_webview_window("pet").is_some() {
+    return Ok(());
+  }
+
+  WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("index.html?pet=1".into()))
+    .title("xixi pet")
+    .inner_size(220.0, 220.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .build()
+    .map_err(|error| format!("Failed to create pet window: {error}"))?;
+
+  Ok(())
+}
+
+fn show_pet_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+  if let Err(error) = ensure_pet_window(app) {
+    eprintln!("{error}");
+    return;
+  }
+
+  if let Some(window) = app.get_webview_window("pet") {
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
   }
 }
 
+fn hide_pet_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+  if let Some(window) = app.get_webview_window("pet") {
+    let _ = window.hide();
+  }
+}
+
+fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+  if let Some(window) = app.get_webview_window("main") {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+  }
+  hide_pet_window(app);
+}
+
 fn hide_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
   if let Some(window) = app.get_webview_window("main") {
     let _ = window.hide();
   }
+  show_pet_window(app);
 }
 
 fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
   if let Some(window) = app.get_webview_window("main") {
     if window.is_visible().unwrap_or(false) {
       let _ = window.hide();
+      show_pet_window(app);
     } else {
       let _ = window.show();
       let _ = window.unminimize();
       let _ = window.set_focus();
+      hide_pet_window(app);
     }
   }
 }
@@ -1881,6 +1934,9 @@ pub fn run() {
       if let Err(error) = ensure_skills_dir() {
         eprintln!("failed to initialize local skills folder: {error}");
       }
+      if let Err(error) = ensure_pet_window(app.handle()) {
+        eprintln!("failed to initialize pet window: {error}");
+      }
 
       let show_item = MenuItem::with_id(app, "tray_show", "Show / Restore xixi", true, None::<&str>)?;
       let hide_item = MenuItem::with_id(app, "tray_hide", "Hide to tray", true, None::<&str>)?;
@@ -1928,9 +1984,12 @@ pub fn run() {
           .state::<AppRuntimeState>()
           .quitting
           .load(Ordering::Relaxed);
-        if !quitting {
+        if !quitting && window.label() == "main" {
           api.prevent_close();
-          let _ = window.hide();
+          hide_main_window(&window.app_handle());
+        } else if !quitting && window.label() == "pet" {
+          api.prevent_close();
+          hide_pet_window(&window.app_handle());
         }
       }
     })
@@ -1941,6 +2000,8 @@ pub fn run() {
       chat_with_model_api,
       plan_user_request,
       execute_local_action,
+      minimize_to_pet,
+      restore_main_from_pet,
       quit_application
     ])
     .run(tauri::generate_context!())

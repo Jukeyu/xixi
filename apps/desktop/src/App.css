@@ -6,6 +6,39 @@
   color: var(--foreground);
 }
 
+.app-shell--gpt {
+  grid-template-columns: 1fr;
+  background: var(--workspace-background);
+}
+
+.app-shell--gpt .pet-panel,
+.app-shell--gpt .action-panel {
+  display: none;
+}
+
+.app-shell--gpt .workspace {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 22px 24px;
+}
+
+.app-shell--gpt .chat-layout {
+  grid-template-columns: 1fr;
+}
+
+.app-shell--gpt .quick-actions {
+  gap: 8px;
+}
+
+.app-shell--gpt .quick-actions button {
+  padding: 9px 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--ghost-button-background);
+  color: var(--foreground);
+  font-weight: 500;
+}
+
 .pet-panel {
   padding: 26px 22px;
   background:
@@ -320,6 +353,12 @@
   font-size: 34px;
 }
 
+.header-subtitle {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .header-actions {
   gap: 10px;
 }
@@ -627,6 +666,208 @@
   color: var(--foreground-strong);
   padding: 10px 12px;
   text-align: left;
+}
+
+.pet-widget-shell {
+  min-height: 100vh;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  user-select: none;
+}
+
+.pet-widget-bubble {
+  max-width: 220px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 252, 244, 0.94);
+  color: #3f2a1b;
+  border: 1px solid rgba(243, 173, 108, 0.7);
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.orange-cat {
+  position: relative;
+  width: 168px;
+  height: 156px;
+  filter: drop-shadow(0 18px 22px rgba(87, 37, 8, 0.24));
+}
+
+.orange-cat__tail {
+  position: absolute;
+  right: 2px;
+  bottom: 44px;
+  width: 70px;
+  height: 20px;
+  background: linear-gradient(90deg, #d86b1e, #ff9f4d);
+  border-radius: 999px;
+  transform-origin: left center;
+}
+
+.orange-cat__body {
+  position: absolute;
+  left: 28px;
+  bottom: 28px;
+  width: 112px;
+  height: 78px;
+  background: linear-gradient(180deg, #ffa856, #ee7c2f);
+  border-radius: 46px 46px 34px 34px;
+}
+
+.orange-cat__stripe {
+  position: absolute;
+  width: 18px;
+  height: 34px;
+  border-radius: 20px;
+  background: rgba(201, 90, 22, 0.52);
+  top: 14px;
+}
+
+.orange-cat__stripe--a {
+  left: 20px;
+}
+
+.orange-cat__stripe--b {
+  left: 46px;
+}
+
+.orange-cat__stripe--c {
+  left: 72px;
+}
+
+.orange-cat__head {
+  position: absolute;
+  left: 54px;
+  top: 10px;
+  width: 78px;
+  height: 74px;
+  background: linear-gradient(180deg, #ffb869, #f48736);
+  border-radius: 42px;
+}
+
+.orange-cat__ear {
+  position: absolute;
+  top: -14px;
+  width: 22px;
+  height: 24px;
+  background: linear-gradient(180deg, #ffaf63, #ea7a2d);
+  border-radius: 8px 8px 2px 2px;
+}
+
+.orange-cat__ear--left {
+  left: 10px;
+  transform: rotate(-18deg);
+}
+
+.orange-cat__ear--right {
+  right: 10px;
+  transform: rotate(18deg);
+}
+
+.orange-cat__face {
+  position: absolute;
+  inset: 20px 16px 16px;
+  border-radius: 26px;
+  background: radial-gradient(circle at top, #ffd6af, #f8bf8d 72%);
+}
+
+.orange-cat__eye {
+  position: absolute;
+  top: 16px;
+  width: 9px;
+  height: 12px;
+  border-radius: 999px;
+  background: #362110;
+}
+
+.orange-cat__eye--left {
+  left: 16px;
+}
+
+.orange-cat__eye--right {
+  right: 16px;
+}
+
+.orange-cat__nose {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  width: 11px;
+  height: 8px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: #e96862;
+}
+
+.orange-cat__paws {
+  position: absolute;
+  left: 52px;
+  bottom: 16px;
+  display: flex;
+  gap: 20px;
+}
+
+.orange-cat__paws span {
+  width: 22px;
+  height: 14px;
+  border-radius: 999px;
+  background: #f6a765;
+}
+
+.pet-widget-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.pet-widget-actions button {
+  border: 1px solid rgba(246, 170, 102, 0.78);
+  background: rgba(255, 248, 238, 0.95);
+  color: #4c2d18;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.orange-cat--blink .orange-cat__eye {
+  height: 3px;
+  top: 20px;
+}
+
+.orange-cat--stretch {
+  transform: scaleX(1.1) translateY(2px);
+}
+
+.orange-cat--stretch .orange-cat__tail {
+  transform: rotate(-8deg) scaleX(1.15);
+}
+
+.orange-cat--play .orange-cat__tail {
+  animation: cat-tail-wag 0.45s ease-in-out infinite alternate;
+}
+
+.orange-cat--sleep .orange-cat__eye {
+  height: 2px;
+  top: 20px;
+}
+
+.orange-cat--sleep .orange-cat__tail {
+  transform: rotate(-12deg);
+  opacity: 0.78;
+}
+
+@keyframes cat-tail-wag {
+  from {
+    transform: rotate(-12deg);
+  }
+  to {
+    transform: rotate(14deg);
+  }
 }
 
 @media (max-width: 1200px) {
