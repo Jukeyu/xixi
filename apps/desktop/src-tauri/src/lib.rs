@@ -615,6 +615,25 @@ fn plan_user_request(request: String) -> CommandPlan {
     }
   }
 
+  if lowered == "watch screen" || lowered == "screen watch" {
+    if let Ok(action) = build_run_script_action(
+      "screen_watch_ocr.py",
+      Some("keyword=stock duration=20 interval=1 max_hits=2".to_string()),
+      "Screen Watch OCR",
+    ) {
+      return action_plan(
+        "I can start a real screen-watch OCR task now.",
+        "medium-risk",
+        vec![
+          step("plan-watch-1", "Parse watch target", "Using default screen watch keyword", "done"),
+          step("plan-watch-2", "Build OCR script payload", "Prepared screen_watch_ocr args", "done"),
+          step("plan-watch-3", "Run local script", "Execute OCR watch loop", "ready"),
+        ],
+        action,
+      );
+    }
+  }
+
   if let Some(raw_watch) = extract_after_prefix_case_insensitive(trimmed, &["watch screen ", "screen watch "]) {
     let keyword = raw_watch.trim();
     let input = if keyword.is_empty() {
@@ -2130,6 +2149,31 @@ mod tests {
     .expect("payload should parse");
     assert_eq!(payload.script, "safe_desktop_action.py");
     assert_eq!(payload.input, Some("type:hello from xixi".to_string()));
+  }
+
+  #[test]
+  fn plans_watch_screen_request_with_default_payload() {
+    let plan = plan_user_request("watch screen".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "medium-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "screen_watch_ocr.py");
+    assert_eq!(
+      payload.input,
+      Some("keyword=stock duration=20 interval=1 max_hits=2".to_string())
+    );
   }
 
   #[test]
