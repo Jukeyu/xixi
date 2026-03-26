@@ -53,6 +53,7 @@ This document describes the current architecture of the runnable desktop build.
 - JSONL execution logging to `%LOCALAPPDATA%\\xixi\\action-log.jsonl`
 - local skill loading from `%LOCALAPPDATA%\\xixi\\skills`
 - local script skills from `%LOCALAPPDATA%\\xixi\\skills\\scripts`
+- local script run logs from `%LOCALAPPDATA%\\xixi\\skills\\runs`
 - executable adapters:
   - folder open
   - URL open and web search URL launch
@@ -74,6 +75,7 @@ This document describes the current architecture of the runnable desktop build.
 - Failed actions return explicit recovery tips.
 - Normal close hides the app to tray; explicit quit is a separate path.
 - `run_script` skills are constrained to local skills scripts folder and allowed extensions.
+- script stdout/stderr is redirected to per-run log files for audit and debugging.
 
 ## Test Model
 

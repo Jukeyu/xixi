@@ -19,7 +19,8 @@ Examples:
 run skill open_github
 run skill open_tradingview
 run skill search_stock_news tsla
-run skill screen_watch_stub stock
+run skill screen_watch_ocr keyword=stock duration=20
+run skill desktop_action_safe click
 ```
 
 ## JSON Schema (Current)
@@ -55,35 +56,77 @@ run skill screen_watch_stub stock
 ## Script Skills (`run_script`)
 
 - Script folder: `%LOCALAPPDATA%\xixi\skills\scripts`
+- Script run logs: `%LOCALAPPDATA%\xixi\skills\runs`
 - Current allowed extensions: `.py`, `.ps1`
-- Sample script created automatically: `sample_screen_watch.py`
+- Built-in templates created automatically:
+  - `screen_watch_ocr.py`
+  - `safe_desktop_action.py`
 
-Example:
+Example (screen watch):
 
 ```json
 {
-  "id": "screen_watch_stub",
-  "name": "Screen Watch Stub",
-  "description": "Run a local python stub script for screen-watch workflow.",
+  "id": "screen_watch_ocr",
+  "name": "Screen Watch OCR",
+  "description": "Watch screen OCR text and detect keyword hits.",
   "kind": "run_script",
-  "target_template": "sample_screen_watch.py",
-  "label_template": "Screen Watch Stub",
+  "target_template": "screen_watch_ocr.py",
+  "label_template": "Screen Watch OCR",
   "risk_level": "medium-risk",
-  "aliases": ["watchscreen", "盯屏"]
+  "aliases": ["watchocr", "盯屏识别"]
 }
 ```
 
 When you run:
 
 ```text
-run skill screen_watch_stub stock
+run skill screen_watch_ocr keyword=stock duration=20 interval=1 max_hits=2
 ```
 
-xixi starts the script and passes `stock` as the first argument.
+xixi starts the script and passes the full input string as script arg #1.
+
+`screen_watch_ocr.py` option keys:
+
+- `keyword`: keyword to detect in OCR text
+- `duration`: total seconds to watch
+- `interval`: seconds between scans
+- `max_hits`: stop after N hits
+- `region`: optional `left,top,width,height`
+
+Example (desktop action):
+
+```text
+run skill desktop_action_safe click
+run skill desktop_action_safe move:960,540
+run skill desktop_action_safe type:hello from xixi
+run skill desktop_action_safe hotkey:ctrl,s
+```
+
+`desktop_action_safe` blocks a small set of dangerous combinations by default and logs every run.
+
+## Python Dependencies
+
+For `screen_watch_ocr.py`:
+
+```text
+pip install mss pillow pytesseract
+```
+
+For `desktop_action_safe.py`:
+
+```text
+pip install pyautogui
+```
+
+If a dependency is missing, the script exits and writes guidance to run logs.
 
 ## Reusing Skills from Internet
 
 You can reuse ideas from online projects, but do not copy blindly.
+
+Current evaluated sources are tracked in:
+
+- `docs/skills/github-research-notes-2026-03-27.md`
 
 Checklist before using external skill code:
 
@@ -92,6 +135,7 @@ Checklist before using external skill code:
 3. Keep scripts inside local skills folder only.
 4. Test with non-sensitive data first.
 5. Add explicit risk level and recovery notes.
+6. Keep a changelog in script header to track what you adapted.
 
 ## Safety Boundary
 
@@ -99,3 +143,4 @@ Checklist before using external skill code:
 - Unknown `kind` values are rejected.
 - Execution still goes through xixi logging and recovery flow.
 - `run_script` is restricted to local skills script folder and allowed extensions.
+- `run_script` output is redirected to `%LOCALAPPDATA%\xixi\skills\runs` for auditing.

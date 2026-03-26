@@ -18,6 +18,7 @@
 - [x] Structured action logs for debugging
 - [x] Recovery flows for failed actions
 - [x] Local skill runner with JSON + script adapters
+- [x] Built-in screen-watch OCR and safe desktop-action script templates
 
 ## Phase 3 - Safety + UX Hardening
 

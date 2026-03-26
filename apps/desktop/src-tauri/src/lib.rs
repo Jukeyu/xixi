@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
   env,
-  fs::{self, OpenOptions},
+  fs::{self, File, OpenOptions},
   io::Write,
   path::{Path, PathBuf},
-  process::Command,
+  process::{Command, Stdio},
   sync::atomic::{AtomicBool, Ordering},
   time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -737,6 +737,9 @@ fn ensure_skills_dir() -> Result<(), String> {
   let scripts_dir = skills_scripts_dir();
   fs::create_dir_all(&scripts_dir)
     .map_err(|error| format!("Failed to create skills scripts folder: {error}"))?;
+  let runs_dir = skills_runs_dir();
+  fs::create_dir_all(&runs_dir)
+    .map_err(|error| format!("Failed to create skills runs folder: {error}"))?;
 
   for skill in default_local_skills() {
     let path = dir.join(format!("{}.json", skill.id));
@@ -748,19 +751,200 @@ fn ensure_skills_dir() -> Result<(), String> {
     fs::write(&path, content).map_err(|error| format!("Failed to write default skill: {error}"))?;
   }
 
-  let sample_script_path = scripts_dir.join("sample_screen_watch.py");
-  if !sample_script_path.exists() {
-    let sample = r#"import datetime
+  ensure_default_script(
+    &scripts_dir.join("screen_watch_ocr.py"),
+    r#"import datetime
+import time
 import sys
 
-keyword = sys.argv[1] if len(sys.argv) > 1 else "default"
-now = datetime.datetime.now().isoformat()
-print(f"[{now}] xixi sample screen-watch stub running with keyword={keyword}")
-print("Replace this script with your own OCR / screen detection logic.")
-"#;
-    fs::write(&sample_script_path, sample)
-      .map_err(|error| format!("Failed to write sample script: {error}"))?;
-  }
+def parse_options(raw: str):
+    defaults = {
+        "keyword": "stock",
+        "interval": "1.0",
+        "duration": "20",
+        "max_hits": "3",
+        "region": "",
+    }
+    text = (raw or "").strip()
+    if "=" not in text:
+        if text:
+            defaults["keyword"] = text
+        return defaults
+
+    parts = [p.strip() for p in text.split() if p.strip()]
+    for part in parts:
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        k = k.strip().lower()
+        v = v.strip()
+        if k in defaults and v:
+            defaults[k] = v
+    return defaults
+
+def parse_region(region_text: str):
+    if not region_text:
+        return None
+    values = [v.strip() for v in region_text.split(",")]
+    if len(values) != 4:
+        return None
+    try:
+        left, top, width, height = [int(v) for v in values]
+        if width <= 0 or height <= 0:
+            return None
+        return {"left": left, "top": top, "width": width, "height": height}
+    except Exception:
+        return None
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    opts = parse_options(raw)
+    keyword = opts["keyword"].lower()
+
+    try:
+        interval = max(0.2, float(opts["interval"]))
+    except Exception:
+        interval = 1.0
+
+    try:
+        duration = max(3.0, float(opts["duration"]))
+    except Exception:
+        duration = 20.0
+
+    try:
+        max_hits = max(1, int(opts["max_hits"]))
+    except Exception:
+        max_hits = 3
+
+    region = parse_region(opts["region"])
+    log(f"screen_watch_ocr start keyword={keyword} interval={interval}s duration={duration}s max_hits={max_hits} region={region or 'full-screen'}")
+
+    try:
+        import mss
+        from PIL import Image
+        import pytesseract
+    except Exception as e:
+        log("missing dependency. install with:")
+        log("pip install mss pillow pytesseract")
+        log(f"import error: {e}")
+        raise SystemExit(1)
+
+    hits = 0
+    scans = 0
+    started = time.time()
+    with mss.mss() as sct:
+        monitor = region or sct.monitors[1]
+        while time.time() - started <= duration:
+            shot = sct.grab(monitor)
+            image = Image.frombytes("RGB", shot.size, shot.rgb)
+            text = pytesseract.image_to_string(image)
+            scans += 1
+            if keyword in text.lower():
+                hits += 1
+                preview = " ".join(text.split())[:180]
+                log(f"HIT {hits}/{max_hits}: keyword found, preview={preview}")
+                if hits >= max_hits:
+                    break
+            time.sleep(interval)
+
+    log(f"done scans={scans} hits={hits}")
+
+if __name__ == '__main__':
+    main()
+"#,
+  )?;
+
+  ensure_default_script(
+    &scripts_dir.join("safe_desktop_action.py"),
+    r#"import datetime
+import sys
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def blocked_command(raw: str) -> bool:
+    lowered = raw.lower().replace(" ", "")
+    blocked = [
+        "hotkey:alt,f4",
+        "hotkey:win,r",
+        "hotkey:win,x",
+        "hotkey:ctrl,alt,del",
+        "press:delete",
+    ]
+    return any(lowered.startswith(item) for item in blocked)
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    if not raw:
+        log("usage: move:x,y | click | doubleclick | type:text | press:key | hotkey:key1,key2")
+        raise SystemExit(1)
+
+    if blocked_command(raw):
+        log(f"blocked dangerous command: {raw}")
+        raise SystemExit(2)
+
+    try:
+        import pyautogui
+    except Exception as e:
+        log("missing dependency. install with:")
+        log("pip install pyautogui")
+        log(f"import error: {e}")
+        raise SystemExit(1)
+
+    pyautogui.FAILSAFE = True
+    pyautogui.PAUSE = 0.08
+
+    cmd = raw.strip()
+    lowered = cmd.lower()
+    log(f"safe_desktop_action received: {cmd}")
+
+    if lowered.startswith("move:"):
+        values = cmd.split(":", 1)[1]
+        x_text, y_text = [v.strip() for v in values.split(",", 1)]
+        pyautogui.moveTo(int(x_text), int(y_text), duration=0.2)
+        log("ok move")
+        return
+
+    if lowered == "click":
+        pyautogui.click()
+        log("ok click")
+        return
+
+    if lowered == "doubleclick":
+        pyautogui.doubleClick()
+        log("ok doubleclick")
+        return
+
+    if lowered.startswith("type:"):
+        text = cmd.split(":", 1)[1]
+        pyautogui.typewrite(text, interval=0.02)
+        log("ok type")
+        return
+
+    if lowered.startswith("press:"):
+        key = cmd.split(":", 1)[1].strip()
+        pyautogui.press(key)
+        log(f"ok press {key}")
+        return
+
+    if lowered.startswith("hotkey:"):
+        keys = [k.strip() for k in cmd.split(":", 1)[1].split(",") if k.strip()]
+        pyautogui.hotkey(*keys)
+        log(f"ok hotkey {keys}")
+        return
+
+    log(f"unknown command: {cmd}")
+    raise SystemExit(1)
+
+if __name__ == '__main__':
+    main()
+"#,
+  )?;
 
   Ok(())
 }
@@ -846,10 +1030,30 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       name: "Screen Watch Stub".into(),
       description: "Run a local python stub script for screen-watch workflow.".into(),
       kind: "run_script".into(),
-      target_template: "sample_screen_watch.py".into(),
+      target_template: "screen_watch_ocr.py".into(),
       label_template: Some("Screen Watch Stub".into()),
       risk_level: Some("medium-risk".into()),
       aliases: Some(vec!["watchscreen".into(), "盯屏".into(), "屏幕监控".into()]),
+    },
+    LocalSkillDefinition {
+      id: "screen_watch_ocr".into(),
+      name: "Screen Watch OCR".into(),
+      description: "Watch screen OCR text and detect keyword hits.".into(),
+      kind: "run_script".into(),
+      target_template: "screen_watch_ocr.py".into(),
+      label_template: Some("Screen Watch OCR".into()),
+      risk_level: Some("medium-risk".into()),
+      aliases: Some(vec!["watchocr".into(), "ocrwatch".into(), "盯屏识别".into()]),
+    },
+    LocalSkillDefinition {
+      id: "desktop_action_safe".into(),
+      name: "Desktop Action Safe".into(),
+      description: "Execute constrained mouse/keyboard actions via script input.".into(),
+      kind: "run_script".into(),
+      target_template: "safe_desktop_action.py".into(),
+      label_template: Some("Desktop Action Safe".into()),
+      risk_level: Some("high-risk".into()),
+      aliases: Some(vec!["pcaction".into(), "桌面操作".into(), "键鼠操作".into()]),
     },
   ]
 }
@@ -955,6 +1159,18 @@ fn run_script(target: &str, label: &str) -> Result<(String, Vec<String>), String
     command.arg(input);
   }
 
+  let run_id = now_unix_ms();
+  let run_log_path = prepare_script_run_log_path(&script_path, run_id)?;
+  let stdout_file = File::create(&run_log_path)
+    .map_err(|error| format!("Failed to create script run log: {error}"))?;
+  let stderr_file = stdout_file
+    .try_clone()
+    .map_err(|error| format!("Failed to clone script run log handle: {error}"))?;
+
+  command
+    .stdout(Stdio::from(stdout_file))
+    .stderr(Stdio::from(stderr_file));
+
   let child = command
     .spawn()
     .map_err(|error| format!("Failed to start script: {error}"))?;
@@ -963,6 +1179,7 @@ fn run_script(target: &str, label: &str) -> Result<(String, Vec<String>), String
     format!("script={}", script_path.to_string_lossy()),
     format!("pid={}", child.id()),
     format!("runner={extension}"),
+    format!("run_log={}", run_log_path.to_string_lossy()),
   ];
 
   if let Some(input) = payload.input {
@@ -1060,6 +1277,10 @@ fn skills_scripts_dir() -> PathBuf {
   skills_dir_path().join("scripts")
 }
 
+fn skills_runs_dir() -> PathBuf {
+  skills_dir_path().join("runs")
+}
+
 fn resolve_skill_script_path(script_value: &str) -> Result<PathBuf, String> {
   if script_value.trim().is_empty() {
     return Err("Script value is empty.".into());
@@ -1084,6 +1305,49 @@ fn resolve_skill_script_path(script_value: &str) -> Result<PathBuf, String> {
   }
 
   Ok(candidate_canonical)
+}
+
+fn ensure_default_script(path: &Path, content: &str) -> Result<(), String> {
+  if path.exists() {
+    return Ok(());
+  }
+
+  fs::write(path, content).map_err(|error| format!("Failed to write default script: {error}"))?;
+  Ok(())
+}
+
+fn sanitize_path_token(raw: &str) -> String {
+  let token = raw
+    .chars()
+    .map(|ch| {
+      if ch.is_ascii_alphanumeric() {
+        ch
+      } else {
+        '_'
+      }
+    })
+    .collect::<String>()
+    .trim_matches('_')
+    .to_string();
+
+  if token.is_empty() {
+    "skill_run".into()
+  } else {
+    token
+  }
+}
+
+fn prepare_script_run_log_path(script_path: &Path, run_id: u128) -> Result<PathBuf, String> {
+  let runs_dir = skills_runs_dir();
+  fs::create_dir_all(&runs_dir)
+    .map_err(|error| format!("Failed to create script runs folder: {error}"))?;
+
+  let script_name = script_path
+    .file_stem()
+    .and_then(|name| name.to_str())
+    .unwrap_or("skill");
+  let filename = format!("run_{}_{}.log", run_id, sanitize_path_token(script_name));
+  Ok(runs_dir.join(filename))
 }
 
 fn resolve_named_folder(query: &str) -> Option<(String, String)> {
@@ -1161,8 +1425,10 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
     ],
     "run_script" => vec![
       "Check script file exists under %LOCALAPPDATA%\\xixi\\skills\\scripts.".into(),
+      "Check run logs under %LOCALAPPDATA%\\xixi\\skills\\runs for stdout/stderr.".into(),
       "Only .py and .ps1 scripts are currently supported.".into(),
       "For Python scripts, ensure python is installed and available in PATH.".into(),
+      "Some scripts need extra packages: mss, pillow, pytesseract, pyautogui.".into(),
     ],
     _ => vec!["Retry later or use a simpler supported command phrase.".into()],
   }
@@ -1379,7 +1645,7 @@ mod tests {
       name: "Screen Watch Stub".into(),
       description: "".into(),
       kind: "run_script".into(),
-      target_template: "sample_screen_watch.py".into(),
+      target_template: "screen_watch_ocr.py".into(),
       label_template: Some("Screen Watch Stub".into()),
       risk_level: Some("medium-risk".into()),
       aliases: None,
@@ -1390,8 +1656,14 @@ mod tests {
 
     let payload: ScriptTargetPayload =
       serde_json::from_str(&action.target).expect("payload must be valid json");
-    assert_eq!(payload.script, "sample_screen_watch.py");
+    assert_eq!(payload.script, "screen_watch_ocr.py");
     assert_eq!(payload.input, Some("stock".to_string()));
+  }
+
+  #[test]
+  fn sanitizes_path_token_for_log_filename() {
+    assert_eq!(sanitize_path_token("screen watch/ocr"), "screen_watch_ocr");
+    assert_eq!(sanitize_path_token(""), "skill_run");
   }
 }
 

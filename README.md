@@ -102,12 +102,14 @@ npm run test:smoke
 
 - 技能目录（Windows）：`%LOCALAPPDATA%\xixi\skills`
 - 脚本目录（代码技能）：`%LOCALAPPDATA%\xixi\skills\scripts`
+- 脚本运行日志：`%LOCALAPPDATA%\xixi\skills\runs`
 - 命令格式：`run skill <skill_id> [input]`
-- 示例：`run skill open_github`、`run skill search_stock_news tsla`、`run skill screen_watch_stub stock`
+- 示例：`run skill open_github`、`run skill search_stock_news tsla`、`run skill screen_watch_ocr keyword=stock duration=20`、`run skill desktop_action_safe click`
 
 技能格式与示例见：
 
 - `docs/skills/local-skills.md`
+- `docs/skills/github-research-notes-2026-03-27.md`
 
 ## Repo Structure
 
