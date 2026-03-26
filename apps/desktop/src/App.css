@@ -217,6 +217,16 @@
   margin-top: 14px;
 }
 
+.action-tools {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.action-tools .ghost-button {
+  flex: 1;
+}
+
 .supported-item,
 .action-card {
   padding: 13px 14px;
@@ -402,6 +412,78 @@
   background: rgba(231, 91, 91, 0.18);
 }
 
+.failed-action-box {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 176, 87, 0.16);
+  border: 1px solid rgba(255, 168, 70, 0.24);
+}
+
+.failed-action-box p {
+  margin: 8px 0 0;
+  color: var(--foreground-soft);
+}
+
+.retry-button {
+  margin-top: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #1c130d;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.retry-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.log-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.log-card {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-secondary);
+  border: 1px solid var(--panel-border);
+}
+
+.log-card.is-ok {
+  background: rgba(92, 175, 119, 0.14);
+}
+
+.log-card.is-fail {
+  background: rgba(231, 91, 91, 0.16);
+}
+
+.log-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.log-card__head span,
+.log-card__meta {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.log-card p {
+  margin: 8px 0 0;
+  color: var(--foreground-soft);
+}
+
 .settings-overlay {
   position: fixed;
   inset: 0;
@@ -442,7 +524,7 @@
   z-index: 30;
   display: grid;
   gap: 6px;
-  min-width: 180px;
+  min-width: 220px;
   padding: 8px;
   border-radius: 18px;
   background: var(--settings-surface);

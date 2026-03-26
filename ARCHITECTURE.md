@@ -19,7 +19,8 @@ This document describes the current architecture of the runnable desktop build.
 4. If execution is allowed and auto-run is enabled:
    - UI calls `execute_local_action`
    - Rust executor runs the native command
-5. UI updates queue state and appends result messages.
+5. UI records structured action logs and appends result/recovery messages.
+6. Window close events are intercepted to hide into system tray (unless explicit quit).
 
 ## Frontend Responsibilities
 
@@ -30,6 +31,8 @@ This document describes the current architecture of the runnable desktop build.
 - theme and settings persistence
 - context menu and settings panel
 - weather data fetch and display
+- structured action logs in local storage
+- retry flow for failed actions
 - desktop window controls (minimize, maximize, close)
 
 `apps/desktop/src/App.css` and `src/index.css` provide:
@@ -44,10 +47,18 @@ This document describes the current architecture of the runnable desktop build.
 
 - command planning (`plan_user_request`)
 - execution dispatch (`execute_local_action`)
+- tray lifecycle (show/hide/quit)
+- close-to-tray behavior
+- JSONL execution logging to `%LOCALAPPDATA%\\xixi\\action-log.jsonl`
 - executable adapters:
   - folder open
-  - URL open
-  - app launch (Chrome, Edge, Notepad, Explorer)
+  - URL open and web search URL launch
+  - app launch (Chrome, Edge, Notepad, Explorer, Calculator, Paint)
+- parameterized planning:
+  - `open site <domain>`
+  - `search web <query>`
+  - `open folder <alias>`
+  - `open app <alias>`
 - explicit unsupported-command handling
 
 ## Safety Model (Current)
@@ -56,6 +67,8 @@ This document describes the current architecture of the runnable desktop build.
 - Unknown commands return a not-implemented plan.
 - No destructive file operations are exposed in current executor.
 - Unsupported requests are visibly reported, not silently ignored.
+- Failed actions return explicit recovery tips.
+- Normal close hides the app to tray; explicit quit is a separate path.
 
 ## Test Model
 
@@ -69,8 +82,8 @@ This document describes the current architecture of the runnable desktop build.
 
 Planned architecture extensions:
 
-- richer command parser (entities + parameters)
 - safer multi-step task confirmation for medium/high-risk actions
 - installable skill registry
 - specialist agent routing layer
-- execution telemetry and replayable action logs
+- richer risk classification by action category
+- replay tooling over structured action logs

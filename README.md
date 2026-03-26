@@ -18,15 +18,18 @@ Most automation tools can operate a computer but are hard for beginners.
 - settings that normal users can understand
 - a contributor-friendly architecture for skills and specialist agents
 
-## Current Real Capabilities (March 26, 2026)
+## Current Real Capabilities (March 27, 2026)
 
 The current build can:
 
 - run as a real Windows desktop app (Tauri)
 - minimize / maximize / close via real desktop window APIs
+- hide to system tray on close and restore from tray menu/icon
 - switch light/dark theme and persist settings
 - show live weather data from Open-Meteo
-- parse and execute supported desktop commands
+- parse and execute supported desktop commands (including parameterized forms)
+- keep structured execution logs with per-action IDs, timing, and recovery hints
+- provide retry flow for failed actions in UI
 - reject unsupported commands honestly (no fake success)
 
 Supported command examples today:
@@ -39,6 +42,12 @@ Supported command examples today:
 - `Open Edge`
 - `Open Notepad`
 - `Open Explorer`
+- `Open app calculator`
+- `Open app paint`
+- `Open folder downloads`
+- `Open folder desktop`
+- `Open site openai.com`
+- `Search web tauri tray icon`
 
 Chinese phrase support is also wired for common variants like:
 

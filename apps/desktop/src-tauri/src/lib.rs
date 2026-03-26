@@ -1,5 +1,19 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use serde_json::json;
+use std::{
+  env,
+  fs::{self, OpenOptions},
+  io::Write,
+  path::{Path, PathBuf},
+  process::Command,
+  sync::atomic::{AtomicBool, Ordering},
+  time::{Instant, SystemTime, UNIX_EPOCH},
+};
+use tauri::{
+  menu::{Menu, MenuItem},
+  tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+  Manager, WindowEvent,
+};
 
 #[derive(Serialize)]
 struct DesktopProfile {
@@ -38,6 +52,15 @@ struct ActionExecutionResult {
   ok: bool,
   summary: String,
   details: Vec<String>,
+  action_id: String,
+  duration_ms: u64,
+  executed_at_ms: u64,
+  recovery_tips: Vec<String>,
+}
+
+#[derive(Default)]
+struct AppRuntimeState {
+  quitting: AtomicBool,
 }
 
 #[tauri::command]
@@ -50,13 +73,15 @@ fn get_desktop_profile() -> DesktopProfile {
       "Desktop shell is live".into(),
       "Only real desktop actions are exposed".into(),
       "Unsupported commands are reported instead of faked".into(),
+      "Close button hides to system tray by default".into(),
     ],
   }
 }
 
 #[tauri::command]
 fn plan_user_request(request: String) -> CommandPlan {
-  let lowered = request.to_lowercase();
+  let trimmed = request.trim();
+  let lowered = trimmed.to_lowercase();
   let compact = lowered.replace(' ', "");
 
   if contains_any(&lowered, &["open qmdownload", "qmdownload", "download folder"])
@@ -200,17 +225,202 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if let Some(folder_query) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &["open folder ", "open directory ", "open dir "],
+  )
+  .or_else(|| extract_after_prefix(trimmed, &["打开文件夹", "打开目录"]))
+  {
+    if let Some((resolved_path, display_name)) = resolve_named_folder(&folder_query) {
+      return direct_plan(
+        &format!("I can open {display_name} right now."),
+        vec![
+          step(
+            "plan-folder-1",
+            "Match command",
+            &format!("Mapped folder alias \"{folder_query}\""),
+            "done",
+          ),
+          step(
+            "plan-folder-2",
+            "Run folder open",
+            &format!("Open {resolved_path} in Explorer"),
+            "ready",
+          ),
+        ],
+        LocalAction {
+          kind: "open_folder".into(),
+          target: resolved_path,
+          label: display_name,
+        },
+      );
+    }
+
+    return unsupported_parameter_plan(
+      "folder alias",
+      &folder_query,
+      "Try one of: downloads, desktop, documents, pictures, xixi folder.",
+    );
+  }
+
+  if let Some(app_query) =
+    extract_after_prefix_case_insensitive(trimmed, &["open app ", "launch "])
+      .or_else(|| extract_after_prefix(trimmed, &["打开应用", "启动应用"]))
+  {
+    if let Some((app_target, app_label)) = resolve_app_alias(&app_query) {
+      return direct_plan(
+        &format!("I can launch {app_label} right now."),
+        vec![
+          step(
+            "plan-app-1",
+            "Match command",
+            &format!("Mapped app alias \"{app_query}\""),
+            "done",
+          ),
+          step(
+            "plan-app-2",
+            "Run app launch",
+            &format!("Launch {app_label}"),
+            "ready",
+          ),
+        ],
+        LocalAction {
+          kind: "open_app".into(),
+          target: app_target.into(),
+          label: app_label.into(),
+        },
+      );
+    }
+
+    return unsupported_parameter_plan(
+      "app alias",
+      &app_query,
+      "Try one of: chrome, edge, notepad, explorer, calculator, paint.",
+    );
+  }
+
+  if let Some(site_target) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &["open site ", "open website ", "open url ", "visit "],
+  )
+  .or_else(|| extract_after_prefix(trimmed, &["打开网站", "打开网页", "访问"]))
+  {
+    let (url, label) = normalize_site_target(&site_target);
+    return direct_plan(
+      "I can open that site right now.",
+      vec![
+        step("plan-site-1", "Normalize target", &format!("Resolved URL: {url}"), "done"),
+        step(
+          "plan-site-2",
+          "Run browser open",
+          "Open URL in default browser",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "open_url".into(),
+        target: url,
+        label,
+      },
+    );
+  }
+
+  if let Some(search_query) = extract_after_prefix_case_insensitive(trimmed, &["search web ", "search "])
+    .or_else(|| extract_after_prefix(trimmed, &["搜索", "搜一下"]))
+  {
+    let query = search_query.trim();
+    if !query.is_empty() {
+      let url = build_search_url(query);
+      return direct_plan(
+        "I can run a real web search in your browser right now.",
+        vec![
+          step("plan-search-1", "Normalize query", &format!("Search query: {query}"), "done"),
+          step(
+            "plan-search-2",
+            "Run browser open",
+            "Open search URL in default browser",
+            "ready",
+          ),
+        ],
+        LocalAction {
+          kind: "search_web".into(),
+          target: url,
+          label: format!("web search: {query}"),
+        },
+      );
+    }
+  }
+
+  if let Some(maybe_site) = extract_after_prefix_case_insensitive(trimmed, &["open "]) {
+    let candidate = maybe_site.trim();
+    if candidate.contains('.') {
+      let (url, label) = normalize_site_target(candidate);
+      return direct_plan(
+        "I recognized that as a site target and can open it now.",
+        vec![
+          step("plan-open-1", "Infer intent", "Detected site-like target after open", "done"),
+          step("plan-open-2", "Run browser open", "Open inferred URL", "ready"),
+        ],
+        LocalAction {
+          kind: "open_url".into(),
+          target: url,
+          label,
+        },
+      );
+    }
+  }
+
   unsupported_plan()
 }
 
 #[tauri::command]
-fn execute_local_action(action: LocalAction) -> Result<ActionExecutionResult, String> {
-  match action.kind.as_str() {
+fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
+  let action_id = format!("act-{}", now_unix_ms());
+  let started_at = now_unix_ms();
+  let timer = Instant::now();
+
+  let execution = match action.kind.as_str() {
     "open_folder" => open_folder(&action.target, &action.label),
     "open_url" => open_url(&action.target, &action.label),
+    "search_web" => open_url(&action.target, &action.label),
     "open_app" => open_app(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
+  };
+
+  let (ok, summary, mut details, recovery_tips) = match execution {
+    Ok((summary, details)) => (true, summary, details, Vec::new()),
+    Err(error) => (
+      false,
+      format!("Failed to run {}.", action.label),
+      vec![error],
+      recovery_tips_for_action(&action),
+    ),
+  };
+
+  details.push(format!("kind={}", action.kind));
+  details.push(format!("target={}", action.target));
+
+  let result = ActionExecutionResult {
+    ok,
+    summary,
+    details,
+    action_id,
+    duration_ms: timer.elapsed().as_millis() as u64,
+    executed_at_ms: started_at as u64,
+    recovery_tips,
+  };
+
+  if let Err(error) = append_action_log(&action, &result) {
+    eprintln!("failed to append action log: {error}");
   }
+
+  result
+}
+
+#[tauri::command]
+fn quit_application(app: tauri::AppHandle, state: tauri::State<AppRuntimeState>) {
+  state.quitting.store(true, Ordering::Relaxed);
+  app.exit(0);
 }
 
 fn direct_plan(reply: &str, steps: Vec<ActionItem>, action: LocalAction) -> CommandPlan {
@@ -247,44 +457,64 @@ fn unsupported_plan() -> CommandPlan {
   }
 }
 
-fn open_folder(target: &str, label: &str) -> Result<ActionExecutionResult, String> {
+fn unsupported_parameter_plan(topic: &str, value: &str, hint: &str) -> CommandPlan {
+  CommandPlan {
+    assistant_reply: format!("I could not resolve this {topic}: \"{value}\"."),
+    risk_level: "not-implemented".into(),
+    can_execute_directly: false,
+    steps: vec![
+      step("plan-param-1", "Read request", "Parsed parameterized command", "done"),
+      step("plan-param-2", "Resolve parameter", "Parameter value was not recognized", "done"),
+      step("plan-param-3", "Recovery hint", hint, "waiting"),
+    ],
+    suggested_action: None,
+  }
+}
+
+fn open_folder(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  if !Path::new(target).exists() {
+    return Err(format!("Folder path does not exist: {target}"));
+  }
+
   Command::new("explorer")
     .arg(target)
     .spawn()
     .map_err(|error| format!("Failed to open folder: {error}"))?;
 
-  Ok(ActionExecutionResult {
-    ok: true,
-    summary: format!("Opened {label}."),
-    details: vec![target.into(), "Executed through Windows Explorer".into()],
-  })
+  Ok((
+    format!("Opened {label}."),
+    vec![target.into(), "Executed through Windows Explorer".into()],
+  ))
 }
 
-fn open_url(target: &str, label: &str) -> Result<ActionExecutionResult, String> {
+fn open_url(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
   Command::new("cmd")
     .args(["/C", "start", "", target])
     .spawn()
     .map_err(|error| format!("Failed to open url: {error}"))?;
 
-  Ok(ActionExecutionResult {
-    ok: true,
-    summary: format!("Opened {label}."),
-    details: vec![target.into(), "Executed through the default browser".into()],
-  })
+  Ok((
+    format!("Opened {label}."),
+    vec![target.into(), "Executed through the default browser".into()],
+  ))
 }
 
-fn open_app(target: &str, label: &str) -> Result<ActionExecutionResult, String> {
+fn open_app(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
   let launched = match target {
     "chrome" => try_spawn_any(&[
       r"C:\Program Files\Google\Chrome\Application\chrome.exe",
       r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+      "chrome.exe",
     ]),
     "edge" => try_spawn_any(&[
       r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
       r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+      "msedge.exe",
     ]),
     "notepad" => Command::new("notepad.exe").spawn().is_ok(),
     "explorer" => Command::new("explorer.exe").spawn().is_ok(),
+    "calculator" => Command::new("calc.exe").spawn().is_ok(),
+    "paint" => Command::new("mspaint.exe").spawn().is_ok(),
     _ => false,
   };
 
@@ -292,11 +522,10 @@ fn open_app(target: &str, label: &str) -> Result<ActionExecutionResult, String> 
     return Err(format!("Failed to launch {label}."));
   }
 
-  Ok(ActionExecutionResult {
-    ok: true,
-    summary: format!("Launched {label}."),
-    details: vec![format!("target={target}")],
-  })
+  Ok((
+    format!("Launched {label}."),
+    vec![format!("target={target}")],
+  ))
 }
 
 fn try_spawn_any(candidates: &[&str]) -> bool {
@@ -307,6 +536,210 @@ fn try_spawn_any(candidates: &[&str]) -> bool {
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
   needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn extract_after_prefix(source: &str, prefixes: &[&str]) -> Option<String> {
+  prefixes.iter().find_map(|prefix| {
+    source.strip_prefix(prefix).map(|rest| rest.trim().to_string())
+  })
+}
+
+fn extract_after_prefix_case_insensitive(source: &str, prefixes: &[&str]) -> Option<String> {
+  let lowered = source.to_lowercase();
+  prefixes.iter().find_map(|prefix| {
+    lowered
+      .strip_prefix(prefix)
+      .map(|_| source[prefix.len()..].trim().to_string())
+  })
+}
+
+fn normalize_site_target(raw_target: &str) -> (String, String) {
+  let target = raw_target
+    .trim()
+    .trim_matches('"')
+    .trim_matches('\'')
+    .trim();
+
+  if target.starts_with("http://") || target.starts_with("https://") {
+    return (target.into(), target.into());
+  }
+
+  let compact = target.replace(' ', "");
+  if compact.contains('.') {
+    return (format!("https://{compact}"), compact);
+  }
+
+  let query_url = build_search_url(target);
+  (query_url, format!("web search: {target}"))
+}
+
+fn build_search_url(query: &str) -> String {
+  format!("https://www.bing.com/search?q={}", query_to_url_param(query))
+}
+
+fn query_to_url_param(query: &str) -> String {
+  query
+    .trim()
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join("+")
+}
+
+fn normalize_alias(value: &str) -> String {
+  value
+    .trim()
+    .to_lowercase()
+    .replace(' ', "")
+    .replace('_', "")
+    .replace('-', "")
+}
+
+fn resolve_named_folder(query: &str) -> Option<(String, String)> {
+  let normalized = normalize_alias(query);
+  let user_profile = env::var("USERPROFILE").ok();
+
+  match normalized.as_str() {
+    "downloads" | "download" | "下载" | "下载区" => {
+      let mut candidates = vec![PathBuf::from(r"D:\QMDownload")];
+      if let Some(profile) = user_profile.as_ref() {
+        candidates.push(Path::new(profile).join("Downloads"));
+      }
+      first_existing_path(&candidates).map(|path| (path, "Downloads folder".into()))
+    }
+    "desktop" | "桌面" => {
+      let path = user_profile.as_ref().map(|profile| Path::new(profile).join("Desktop"))?;
+      Some((path.to_string_lossy().into_owned(), "Desktop folder".into()))
+    }
+    "documents" | "document" | "文档" | "文件" => {
+      let path = user_profile
+        .as_ref()
+        .map(|profile| Path::new(profile).join("Documents"))?;
+      Some((path.to_string_lossy().into_owned(), "Documents folder".into()))
+    }
+    "pictures" | "picture" | "images" | "图片" | "照片" => {
+      let path = user_profile
+        .as_ref()
+        .map(|profile| Path::new(profile).join("Pictures"))?;
+      Some((path.to_string_lossy().into_owned(), "Pictures folder".into()))
+    }
+    "qmdownload" | "xiazai" | "d盘下载" => {
+      Some((r"D:\QMDownload".into(), "QMDownload folder".into()))
+    }
+    "xixi" | "xixi项目" | "xixi目录" => Some((r"D:\QMDownload\xixi".into(), "xixi project folder".into())),
+    _ => None,
+  }
+}
+
+fn first_existing_path(candidates: &[PathBuf]) -> Option<String> {
+  candidates
+    .iter()
+    .find(|path| path.exists())
+    .map(|path| path.to_string_lossy().into_owned())
+}
+
+fn resolve_app_alias(query: &str) -> Option<(&'static str, &'static str)> {
+  let normalized = normalize_alias(query);
+  match normalized.as_str() {
+    "chrome" | "谷歌" | "谷歌浏览器" => Some(("chrome", "Google Chrome")),
+    "edge" | "微软浏览器" | "microsoftedge" => Some(("edge", "Microsoft Edge")),
+    "notepad" | "记事本" => Some(("notepad", "Notepad")),
+    "explorer" | "fileexplorer" | "资源管理器" | "文件管理器" => {
+      Some(("explorer", "File Explorer"))
+    }
+    "calculator" | "calc" | "计算器" => Some(("calculator", "Calculator")),
+    "paint" | "mspaint" | "画图" => Some(("paint", "Paint")),
+    _ => None,
+  }
+}
+
+fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
+  match action.kind.as_str() {
+    "open_app" => vec![
+      "Check whether the target app is installed on this Windows machine.".into(),
+      "Try a different app alias like: chrome, edge, notepad, explorer, calculator, paint.".into(),
+      "If needed, run the command once manually and retry from xixi.".into(),
+    ],
+    "open_folder" => vec![
+      "Confirm the target folder exists and you have access permissions.".into(),
+      "Try a known folder alias such as downloads, desktop, documents, or xixi folder.".into(),
+    ],
+    "open_url" | "search_web" => vec![
+      "Check whether a default browser is configured on this Windows profile.".into(),
+      "Try using a full URL like https://example.com.".into(),
+    ],
+    _ => vec!["Retry later or use a simpler supported command phrase.".into()],
+  }
+}
+
+fn action_log_path() -> PathBuf {
+  if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+    return Path::new(&local_app_data).join("xixi").join("action-log.jsonl");
+  }
+  env::temp_dir().join("xixi").join("action-log.jsonl")
+}
+
+fn append_action_log(action: &LocalAction, result: &ActionExecutionResult) -> Result<(), String> {
+  let path = action_log_path();
+  if let Some(parent) = path.parent() {
+    fs::create_dir_all(parent).map_err(|error| format!("Failed to prepare log folder: {error}"))?;
+  }
+
+  let mut file = OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(&path)
+    .map_err(|error| format!("Failed to open log file: {error}"))?;
+
+  let line = json!({
+    "action_id": result.action_id,
+    "executed_at_ms": result.executed_at_ms,
+    "duration_ms": result.duration_ms,
+    "ok": result.ok,
+    "summary": result.summary,
+    "details": result.details,
+    "recovery_tips": result.recovery_tips,
+    "action": {
+      "kind": action.kind,
+      "target": action.target,
+      "label": action.label,
+    }
+  });
+
+  writeln!(file, "{line}").map_err(|error| format!("Failed to write log file: {error}"))?;
+  Ok(())
+}
+
+fn now_unix_ms() -> u128 {
+  SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map(|duration| duration.as_millis())
+    .unwrap_or(0)
+}
+
+fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+  if let Some(window) = app.get_webview_window("main") {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+  }
+}
+
+fn hide_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+  if let Some(window) = app.get_webview_window("main") {
+    let _ = window.hide();
+  }
+}
+
+fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+  if let Some(window) = app.get_webview_window("main") {
+    if window.is_visible().unwrap_or(false) {
+      let _ = window.hide();
+    } else {
+      let _ = window.show();
+      let _ = window.unminimize();
+      let _ = window.set_focus();
+    }
+  }
 }
 
 fn step(id: &str, title: &str, detail: &str, state: &str) -> ActionItem {
@@ -367,11 +800,58 @@ mod tests {
     assert_eq!(plan.risk_level, "not-implemented");
     assert!(plan.suggested_action.is_none());
   }
+
+  #[test]
+  fn plans_parameterized_site_request() {
+    let plan = plan_user_request("open site openai.com".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("https://openai.com")
+    );
+  }
+
+  #[test]
+  fn plans_web_search_request() {
+    let plan = plan_user_request("search web tauri tray icon".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("search_web")
+    );
+  }
+
+  #[test]
+  fn plans_parameterized_folder_request() {
+    let plan = plan_user_request("open folder downloads".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("open_folder")
+    );
+  }
+
+  #[test]
+  fn plans_parameterized_app_request() {
+    let plan = plan_user_request("open app calculator".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("calculator")
+    );
+  }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(AppRuntimeState::default())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -380,12 +860,64 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      let show_item = MenuItem::with_id(app, "tray_show", "Show / Restore xixi", true, None::<&str>)?;
+      let hide_item = MenuItem::with_id(app, "tray_hide", "Hide to tray", true, None::<&str>)?;
+      let quit_item = MenuItem::with_id(app, "tray_quit", "Quit xixi", true, None::<&str>)?;
+      let tray_menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+
+      let mut tray_builder = TrayIconBuilder::with_id("xixi-tray")
+        .tooltip("xixi is running")
+        .menu(&tray_menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+          "tray_show" => show_main_window(app),
+          "tray_hide" => hide_main_window(app),
+          "tray_quit" => {
+            app
+              .state::<AppRuntimeState>()
+              .quitting
+              .store(true, Ordering::Relaxed);
+            app.exit(0);
+          }
+          _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+          if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+          } = event
+          {
+            let app = tray.app_handle();
+            toggle_main_window(&app);
+          }
+        });
+
+      if let Some(icon) = app.default_window_icon().cloned() {
+        tray_builder = tray_builder.icon(icon);
+      }
+
+      tray_builder.build(app)?;
       Ok(())
+    })
+    .on_window_event(|window, event| {
+      if let WindowEvent::CloseRequested { api, .. } = event {
+        let quitting = window
+          .state::<AppRuntimeState>()
+          .quitting
+          .load(Ordering::Relaxed);
+        if !quitting {
+          api.prevent_close();
+          let _ = window.hide();
+        }
+      }
     })
     .invoke_handler(tauri::generate_handler![
       get_desktop_profile,
       plan_user_request,
-      execute_local_action
+      execute_local_action,
+      quit_application
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

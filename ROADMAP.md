@@ -12,11 +12,11 @@
 
 ## Phase 2 - Broader Real Actions
 
-- [ ] Add more safe app/file/browser actions
-- [ ] Parameterized actions (for example `open <site>`)
-- [ ] Better action result feedback in chat history
-- [ ] Structured action logs for debugging
-- [ ] Recovery flows for failed actions
+- [x] Add more safe app/file/browser actions
+- [x] Parameterized actions (for example `open <site>`)
+- [x] Better action result feedback in chat history
+- [x] Structured action logs for debugging
+- [x] Recovery flows for failed actions
 
 ## Phase 3 - Safety + UX Hardening
 

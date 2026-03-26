@@ -43,6 +43,24 @@ type ActionExecutionResult = {
   ok: boolean
   summary: string
   details: string[]
+  action_id: string
+  duration_ms: number
+  executed_at_ms: number
+  recovery_tips: string[]
+}
+
+type ActionLogEntry = {
+  id: string
+  request: string
+  actionLabel: string
+  actionKind: string
+  actionTarget: string
+  ok: boolean
+  summary: string
+  details: string[]
+  recoveryTips: string[]
+  durationMs: number
+  executedAtMs: number
 }
 
 type ThemeMode = 'light' | 'dark'
@@ -72,6 +90,8 @@ type ContextMenuState = {
 }
 
 const SETTINGS_STORAGE_KEY = 'xixi.desktop.settings.v1'
+const ACTION_LOG_STORAGE_KEY = 'xixi.desktop.action-log.v1'
+const MAX_ACTION_LOGS = 60
 
 const defaultSettings: SettingsState = {
   theme: 'light',
@@ -97,7 +117,7 @@ const initialMessages: ChatMessage[] = [
     role: 'assistant',
     author: 'xixi',
     content:
-      'Supported right now: open QMDownload, open xixi folder, open GitHub, open weather page, open Chrome, open Edge, open Notepad, open Explorer.',
+      'Supported now includes parameterized commands: open site openai.com, search web tauri tray icon, open folder downloads, open app calculator.',
     meta: 'Unsupported requests stay explicit.',
   },
 ]
@@ -121,13 +141,20 @@ const initialQueue: ActionItem[] = [
     detail: 'Weather card fetches real data from Open-Meteo',
     state: 'done',
   },
+  {
+    id: 'boot-4',
+    title: 'Tray + logs',
+    detail: 'Close hides to tray and each action writes structured logs',
+    state: 'done',
+  },
 ]
 
 const quickActions = [
-  'Open QMDownload',
+  'Open folder downloads',
+  'Open site github.com',
+  'Search web Tauri tray icon',
+  'Open app calculator',
   'Open xixi folder',
-  'Open GitHub',
-  'Open Chrome',
 ]
 
 const supportedCommands = [
@@ -139,6 +166,12 @@ const supportedCommands = [
   'Open Edge',
   'Open Notepad',
   'Open Explorer',
+  'Open app calculator',
+  'Open app paint',
+  'Open folder downloads',
+  'Open folder desktop',
+  'Open site <domain>',
+  'Search web <query>',
 ]
 
 function makeId(prefix: string) {
@@ -162,6 +195,32 @@ function readStoredSettings(): SettingsState {
   }
 }
 
+function readStoredActionLogs(): ActionLogEntry[] {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  try {
+    const raw = window.localStorage.getItem(ACTION_LOG_STORAGE_KEY)
+    if (!raw) {
+      return []
+    }
+
+    const parsed = JSON.parse(raw) as ActionLogEntry[]
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed.slice(0, MAX_ACTION_LOGS)
+  } catch {
+    return []
+  }
+}
+
+function clampFontScale(value: number) {
+  return Math.max(0.9, Math.min(1.4, Number(value.toFixed(2))))
+}
+
 function weatherCodeToText(code: number) {
   if (code === 0) return 'Clear'
   if ([1, 2, 3].includes(code)) return 'Cloudy'
@@ -173,13 +232,17 @@ function weatherCodeToText(code: number) {
   return 'Unknown'
 }
 
+function formatTimestamp(timestampMs: number) {
+  return new Date(timestampMs).toLocaleString()
+}
+
 function App() {
   const isDesktop = '__TAURI_INTERNALS__' in window
   const runtimeMode = isDesktop ? 'Desktop shell' : 'Browser preview'
   const [desktopProfile, setDesktopProfile] = useState<DesktopProfile | null>(null)
   const [messages, setMessages] = useState(initialMessages)
   const [actionQueue, setActionQueue] = useState(initialQueue)
-  const [draft, setDraft] = useState('Open GitHub')
+  const [draft, setDraft] = useState('Open site github.com')
   const [isBusy, setIsBusy] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -195,6 +258,8 @@ function App() {
     x: 0,
     y: 0,
   })
+  const [actionLogs, setActionLogs] = useState<ActionLogEntry[]>(() => readStoredActionLogs())
+  const [lastFailedAction, setLastFailedAction] = useState<LocalAction | null>(null)
   const [weatherReloadTick, setWeatherReloadTick] = useState(0)
 
   const windowApi = useMemo(() => (isDesktop ? getCurrentWindow() : null), [isDesktop])
@@ -228,6 +293,13 @@ function App() {
     )
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
   }, [settings])
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      ACTION_LOG_STORAGE_KEY,
+      JSON.stringify(actionLogs.slice(0, MAX_ACTION_LOGS))
+    )
+  }, [actionLogs])
 
   useEffect(() => {
     let cancelled = false
@@ -326,6 +398,70 @@ function App() {
     })
   }
 
+  const appendActionLog = (
+    requestText: string,
+    action: LocalAction,
+    result: ActionExecutionResult
+  ) => {
+    const nextEntry: ActionLogEntry = {
+      id: result.action_id,
+      request: requestText,
+      actionLabel: action.label,
+      actionKind: action.kind,
+      actionTarget: action.target,
+      ok: result.ok,
+      summary: result.summary,
+      details: result.details,
+      recoveryTips: result.recovery_tips,
+      durationMs: result.duration_ms,
+      executedAtMs: result.executed_at_ms,
+    }
+
+    setActionLogs((current) => [nextEntry, ...current].slice(0, MAX_ACTION_LOGS))
+  }
+
+  const executePlannedAction = async (action: LocalAction, requestText: string) => {
+    setActionQueue((current) =>
+      current.map((item, index) =>
+        index === 0 ? { ...item, state: 'running' } : item
+      )
+    )
+
+    const result = await invoke<ActionExecutionResult>('execute_local_action', {
+      action,
+    })
+
+    appendActionLog(requestText, action, result)
+
+    setActionQueue((current) =>
+      current.map((item) =>
+        item.state === 'running'
+          ? { ...item, state: result.ok ? 'done' : 'error' }
+          : item
+      )
+    )
+
+    appendAssistantMessage(
+      result.summary,
+      `${result.ok ? 'success' : 'failed'} | ${result.duration_ms} ms | ${result.action_id}`
+    )
+
+    if (result.details.length > 0) {
+      appendAssistantMessage('Action details', result.details.join(' / '))
+    }
+
+    if (!result.ok) {
+      setLastFailedAction(action)
+      if (result.recovery_tips.length > 0) {
+        appendAssistantMessage('Recovery suggestions', result.recovery_tips.join(' / '))
+      }
+    } else {
+      setLastFailedAction(null)
+    }
+
+    return result
+  }
+
   const runRequest = async (request: string) => {
     const trimmed = request.trim()
     if (!trimmed || isBusy) {
@@ -358,29 +494,17 @@ function App() {
         `${plan.risk_level} | ${plan.can_execute_directly ? 'real action available' : 'not implemented'}`
       )
 
-      if (isDesktop && settings.autoRunSupported && plan.can_execute_directly && plan.suggested_action) {
-        setActionQueue((current) =>
-          current.map((item, index) =>
-            index === 0 ? { ...item, state: 'running' } : item
-          )
-        )
-
-        const result = await invoke<ActionExecutionResult>('execute_local_action', {
-          action: plan.suggested_action,
-        })
-
-        setActionQueue((current) =>
-          current.map((item) => ({
-            ...item,
-            state: result.ok ? 'done' : item.state === 'running' ? 'error' : item.state,
-          }))
-        )
-
-        appendAssistantMessage(
-          result.summary,
-          result.details.length > 0 ? result.details.join(' / ') : 'Desktop action completed'
-        )
+      if (
+        isDesktop &&
+        settings.autoRunSupported &&
+        plan.can_execute_directly &&
+        plan.suggested_action
+      ) {
+        await executePlannedAction(plan.suggested_action, trimmed)
       } else if (!settings.autoRunSupported && plan.can_execute_directly) {
+        if (plan.suggested_action) {
+          setLastFailedAction(plan.suggested_action)
+        }
         appendAssistantMessage(
           'The command is supported, but auto-run is off in settings. Turn it on to execute immediately.',
           'Manual safety mode is active'
@@ -407,9 +531,45 @@ function App() {
     }
   }
 
+  const retryLastFailedAction = async () => {
+    if (!lastFailedAction || isBusy) {
+      return
+    }
+
+    setIsBusy(true)
+    try {
+      appendAssistantMessage(
+        'Retrying the last failed action.',
+        `${lastFailedAction.kind} -> ${lastFailedAction.target}`
+      )
+
+      setActionQueue([
+        {
+          id: makeId('retry'),
+          title: `Retry ${lastFailedAction.label}`,
+          detail: `Retrying ${lastFailedAction.kind} (${lastFailedAction.target})`,
+          state: 'ready',
+        },
+      ])
+
+      await executePlannedAction(lastFailedAction, `Retry ${lastFailedAction.label}`)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unknown retry error'
+      appendAssistantMessage('Retry failed again.', detail)
+      setActionQueue((current) =>
+        current.map((item, index) =>
+          index === 0 ? { ...item, state: 'error' } : item
+        )
+      )
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
   const resetConversation = () => {
     setMessages(initialMessages)
     setActionQueue(initialQueue)
+    setLastFailedAction(null)
   }
 
   const toggleTheme = () => {
@@ -421,6 +581,36 @@ function App() {
 
   const refreshWeather = () => {
     setWeatherReloadTick((value) => value + 1)
+  }
+
+  const adjustFontScale = (delta: number) => {
+    setSettings((current) => ({
+      ...current,
+      fontScale: clampFontScale(current.fontScale + delta),
+    }))
+  }
+
+  const exportActionLogs = () => {
+    if (actionLogs.length === 0) {
+      appendAssistantMessage('No action logs to export yet.')
+      return
+    }
+
+    const blob = new Blob([JSON.stringify(actionLogs, null, 2)], {
+      type: 'application/json',
+    })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.href = url
+    link.download = `xixi-action-log-${Date.now()}.json`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const clearActionLogs = () => {
+    setActionLogs([])
   }
 
   const onContextMenu: React.MouseEventHandler<HTMLDivElement> = (event) => {
@@ -453,6 +643,11 @@ function App() {
     await windowApi.close()
   }
 
+  const handleQuit = async () => {
+    if (!isDesktop) return
+    await invoke('quit_application')
+  }
+
   return (
     <div className="app-shell" onContextMenu={onContextMenu}>
       <aside className="pet-panel">
@@ -472,7 +667,8 @@ function App() {
           </div>
           <h1>Sharper, usable desktop UI</h1>
           <p className="pet-card__summary">
-            The contrast, theme, settings, and window controls in this build are all real. What you see here is meant to be usable, not decorative filler.
+            The contrast, theme, settings, and window controls in this build are all real. What you
+            see here is meant to be usable, not decorative filler.
           </p>
           <div className="pet-card__status">
             <span className="status-dot" />
@@ -481,7 +677,7 @@ function App() {
           <div className="self-talk">
             {isBusy
               ? '"I am working through a real action path now."'
-              : '"You can right-click anywhere to open the settings menu."'}
+              : '"You can right-click anywhere to open quick tuning controls."'}
           </div>
           {desktopProfile ? (
             <div className="runtime-note">
@@ -526,7 +722,7 @@ function App() {
       <main className={`workspace ${settings.compactMode ? 'is-compact' : ''}`}>
         <header className="workspace-header">
           <div>
-            <span className="eyebrow">Phase 1 Workspace</span>
+            <span className="eyebrow">Phase 2 Prototype Workspace</span>
             <h2>Readable and real</h2>
           </div>
           <div className="header-actions">
@@ -543,7 +739,10 @@ function App() {
               <button type="button" onClick={() => void handleToggleMaximize()} title="Toggle size">
                 {isMaximized ? '[]' : '+'}
               </button>
-              <button type="button" onClick={() => void handleClose()} title="Close">
+              <button type="button" onClick={() => void handleClose()} title="Hide to tray">
+                _
+              </button>
+              <button type="button" onClick={() => void handleQuit()} title="Quit">
                 x
               </button>
             </div>
@@ -577,13 +776,13 @@ function App() {
 
             <footer className="composer">
               <div className="composer__hint">
-                Right now I only execute commands that are actually wired. Everything else stays explicit.
+                I only execute commands that are actually wired. Everything else stays explicit.
               </div>
               <div className="composer__row">
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Type a supported command"
+                  placeholder="Try: open site openai.com / open folder downloads / open app calculator"
                 />
                 <button
                   type="button"
@@ -616,7 +815,63 @@ function App() {
               <li>Theme and settings persist locally</li>
               <li>Weather card uses live API data</li>
               <li>Window controls call the real desktop shell</li>
+              <li>Close hides to tray instead of silent exit</li>
+              <li>Every execution writes a structured action log</li>
             </ul>
+
+            {lastFailedAction ? (
+              <div className="failed-action-box">
+                <div className="section-title">Recovery</div>
+                <p>
+                  Last failed action: <strong>{lastFailedAction.label}</strong>
+                </p>
+                <button
+                  type="button"
+                  className="retry-button"
+                  onClick={() => void retryLastFailedAction()}
+                  disabled={isBusy}
+                >
+                  Retry last failed action
+                </button>
+              </div>
+            ) : null}
+
+            <div className="section-title">Action logs</div>
+            <div className="action-tools">
+              <button type="button" className="ghost-button" onClick={exportActionLogs}>
+                Export JSON
+              </button>
+              <button type="button" className="ghost-button" onClick={clearActionLogs}>
+                Clear
+              </button>
+            </div>
+
+            <div className="log-list">
+              {actionLogs.length === 0 ? (
+                <article className="log-card">
+                  <div className="log-card__head">
+                    <strong>No logs yet</strong>
+                  </div>
+                  <p>Run a supported command to create structured entries.</p>
+                </article>
+              ) : (
+                actionLogs.slice(0, 6).map((log) => (
+                  <article
+                    key={log.id}
+                    className={`log-card ${log.ok ? 'is-ok' : 'is-fail'}`}
+                  >
+                    <div className="log-card__head">
+                      <strong>{log.actionLabel}</strong>
+                      <span>{log.ok ? 'ok' : 'failed'}</span>
+                    </div>
+                    <p>{log.summary}</p>
+                    <div className="log-card__meta">
+                      {log.durationMs} ms | {formatTimestamp(log.executedAtMs)}
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
           </aside>
         </section>
       </main>
@@ -660,7 +915,7 @@ function App() {
               <input
                 type="range"
                 min="0.9"
-                max="1.2"
+                max="1.4"
                 step="0.05"
                 value={settings.fontScale}
                 onChange={(event) =>
@@ -756,6 +1011,34 @@ function App() {
           <button type="button" onClick={toggleTheme}>
             Toggle theme
           </button>
+          <button type="button" onClick={() => adjustFontScale(0.05)}>
+            Increase font
+          </button>
+          <button type="button" onClick={() => adjustFontScale(-0.05)}>
+            Decrease font
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setSettings((current) => ({
+                ...current,
+                compactMode: !current.compactMode,
+              }))
+            }
+          >
+            Toggle compact mode
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setSettings((current) => ({
+                ...current,
+                autoRunSupported: !current.autoRunSupported,
+              }))
+            }
+          >
+            Toggle auto-run
+          </button>
           <button type="button" onClick={() => setSettingsOpen(true)}>
             Open settings
           </button>
@@ -764,6 +1047,13 @@ function App() {
           </button>
           <button type="button" onClick={refreshWeather}>
             Refresh weather
+          </button>
+          <button
+            type="button"
+            onClick={() => void retryLastFailedAction()}
+            disabled={!lastFailedAction || isBusy}
+          >
+            Retry last failed
           </button>
         </div>
       ) : null}
