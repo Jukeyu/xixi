@@ -190,6 +190,20 @@
   margin-top: 14px;
 }
 
+.supported-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.supported-item {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 14px;
+}
+
 .persona-card {
   gap: 12px;
   padding: 14px;

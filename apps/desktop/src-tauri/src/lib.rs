@@ -47,9 +47,9 @@ fn get_desktop_profile() -> DesktopProfile {
     runtime: "tauri-desktop".into(),
     action_mode: "small_tasks_direct_large_tasks_confirm".into(),
     notes: vec![
-      "Chat workspace is active".into(),
-      "Desktop automation adapters are online".into(),
-      "Safe command planning is now wired into the shell".into(),
+      "Desktop shell is live".into(),
+      "Only real desktop actions are exposed".into(),
+      "Unsupported commands are reported instead of faked".into(),
     ],
   }
 }
@@ -57,116 +57,133 @@ fn get_desktop_profile() -> DesktopProfile {
 #[tauri::command]
 fn plan_user_request(request: String) -> CommandPlan {
   let lowered = request.to_lowercase();
-  let normalized = request.replace('：', ":");
 
-  if lowered.contains("github") {
-    return CommandPlan {
-      assistant_reply:
-        "我准备直接帮你打开 GitHub。这属于低风险的小动作，我会直接执行。".into(),
-      risk_level: "low-risk".into(),
-      can_execute_directly: true,
-      steps: vec![
-        step("step-open-browser", "确定目标", "将 GitHub 识别为浏览器打开动作", "done"),
-        step("step-run-browser", "执行动作", "调用系统打开 GitHub 首页", "ready"),
+  if contains_any(&lowered, &["open qmdownload", "qmdownload", "download folder"]) {
+    return direct_plan(
+      "I can open the QMDownload folder right now.",
+      vec![
+        step("plan-qm-1", "Match command", "Mapped request to QMDownload folder", "done"),
+        step("plan-qm-2", "Run folder open", "Open D:\\QMDownload in Explorer", "ready"),
       ],
-      suggested_action: Some(LocalAction {
-        kind: "open_url".into(),
-        target: "https://github.com".into(),
-        label: "Open GitHub".into(),
-      }),
-    };
-  }
-
-  if normalized.contains("天气") {
-    return CommandPlan {
-      assistant_reply:
-        "我会先帮你打开天气查询页面，后面再把天气提醒做成真正的主动提醒模块。".into(),
-      risk_level: "low-risk".into(),
-      can_execute_directly: true,
-      steps: vec![
-        step("step-weather-plan", "理解需求", "将天气问题转成网页查询动作", "done"),
-        step("step-weather-open", "执行动作", "打开天气搜索页面", "ready"),
-      ],
-      suggested_action: Some(LocalAction {
-        kind: "open_url".into(),
-        target: "https://www.bing.com/search?q=%E4%BB%8A%E5%A4%A9%E5%A4%A9%E6%B0%94".into(),
-        label: "Open weather search".into(),
-      }),
-    };
-  }
-
-  if normalized.contains("xixi 项目")
-    || normalized.contains("xixi项目")
-    || normalized.contains("项目目录")
-  {
-    return CommandPlan {
-      assistant_reply:
-        "我会帮你直接打开 xixi 项目目录。这个动作只是在本地打开文件夹，风险很低。".into(),
-      risk_level: "low-risk".into(),
-      can_execute_directly: true,
-      steps: vec![
-        step("step-folder-plan", "理解需求", "识别为项目目录打开动作", "done"),
-        step("step-folder-open", "执行动作", "打开 D:\\QMDownload\\xixi", "ready"),
-      ],
-      suggested_action: Some(LocalAction {
-        kind: "open_folder".into(),
-        target: r"D:\QMDownload\xixi".into(),
-        label: "Open xixi project folder".into(),
-      }),
-    };
-  }
-
-  if normalized.contains("d 盘下载区")
-    || normalized.contains("d盘下载区")
-    || normalized.contains("qmdownload")
-  {
-    return CommandPlan {
-      assistant_reply:
-        "我会直接帮你打开 D 盘下载区。这个动作属于安全的小事，可以马上执行。".into(),
-      risk_level: "low-risk".into(),
-      can_execute_directly: true,
-      steps: vec![
-        step("step-qm-plan", "理解需求", "定位到 D:\\QMDownload", "done"),
-        step("step-qm-open", "执行动作", "用系统文件管理器打开目标目录", "ready"),
-      ],
-      suggested_action: Some(LocalAction {
+      LocalAction {
         kind: "open_folder".into(),
         target: r"D:\QMDownload".into(),
-        label: "Open QMDownload".into(),
-      }),
-    };
+        label: "QMDownload folder".into(),
+      },
+    );
   }
 
-  if lowered.contains("chrome") || normalized.contains("浏览器") {
-    return CommandPlan {
-      assistant_reply:
-        "我会优先把这个需求当成浏览器打开动作处理。当前先走安全路径，直接打开一个浏览器页面。".into(),
-      risk_level: "low-risk".into(),
-      can_execute_directly: true,
-      steps: vec![
-        step("step-browser-plan", "理解需求", "识别为浏览器打开动作", "done"),
-        step("step-browser-open", "执行动作", "打开浏览器首页", "ready"),
+  if contains_any(&lowered, &["open xixi folder", "open xixi project", "xixi folder"]) {
+    return direct_plan(
+      "I can open the xixi project folder right now.",
+      vec![
+        step("plan-xixi-1", "Match command", "Mapped request to xixi project folder", "done"),
+        step("plan-xixi-2", "Run folder open", "Open D:\\QMDownload\\xixi in Explorer", "ready"),
       ],
-      suggested_action: Some(LocalAction {
-        kind: "open_url".into(),
-        target: "https://www.google.com".into(),
-        label: "Open browser".into(),
-      }),
-    };
+      LocalAction {
+        kind: "open_folder".into(),
+        target: r"D:\QMDownload\xixi".into(),
+        label: "xixi project folder".into(),
+      },
+    );
   }
 
-  CommandPlan {
-    assistant_reply:
-      "这句话我已经理解成一条待执行任务，但第一版还没有覆盖对应的真实执行器。我先帮你拆成动作计划，下一轮再把它接进具体的软件控制。".into(),
-    risk_level: "needs-review".into(),
-    can_execute_directly: false,
-    steps: vec![
-      step("step-intent", "识别意图", "把自然语言拆成可以执行的桌面动作", "done"),
-      step("step-safety", "检查风险", "判断是否属于小事直接执行", "done"),
-      step("step-adapter", "等待适配器", "当前动作需要新的本地执行器支持", "waiting"),
-    ],
-    suggested_action: None,
+  if contains_any(&lowered, &["open github", "github"]) {
+    return direct_plan(
+      "I can open GitHub in your default browser right now.",
+      vec![
+        step("plan-gh-1", "Match command", "Mapped request to GitHub URL", "done"),
+        step("plan-gh-2", "Run browser open", "Open https://github.com", "ready"),
+      ],
+      LocalAction {
+        kind: "open_url".into(),
+        target: "https://github.com".into(),
+        label: "GitHub".into(),
+      },
+    );
   }
+
+  if contains_any(&lowered, &["open weather", "weather"]) {
+    return direct_plan(
+      "I can open a weather search page right now.",
+      vec![
+        step("plan-weather-1", "Match command", "Mapped request to weather search URL", "done"),
+        step(
+          "plan-weather-2",
+          "Run browser open",
+          "Open the weather search page in the default browser",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "open_url".into(),
+        target: "https://www.bing.com/search?q=today+weather".into(),
+        label: "weather search".into(),
+      },
+    );
+  }
+
+  if contains_any(&lowered, &["open chrome", "chrome"]) {
+    return direct_plan(
+      "I can try to launch Google Chrome right now.",
+      vec![
+        step("plan-chrome-1", "Match command", "Mapped request to Chrome launch", "done"),
+        step("plan-chrome-2", "Run app launch", "Try known Chrome executable locations", "ready"),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "chrome".into(),
+        label: "Google Chrome".into(),
+      },
+    );
+  }
+
+  if contains_any(&lowered, &["open edge", "edge"]) {
+    return direct_plan(
+      "I can try to launch Microsoft Edge right now.",
+      vec![
+        step("plan-edge-1", "Match command", "Mapped request to Edge launch", "done"),
+        step("plan-edge-2", "Run app launch", "Try known Edge executable locations", "ready"),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "edge".into(),
+        label: "Microsoft Edge".into(),
+      },
+    );
+  }
+
+  if contains_any(&lowered, &["open notepad", "notepad"]) {
+    return direct_plan(
+      "I can launch Notepad right now.",
+      vec![
+        step("plan-notepad-1", "Match command", "Mapped request to Notepad launch", "done"),
+        step("plan-notepad-2", "Run app launch", "Start notepad.exe", "ready"),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "notepad".into(),
+        label: "Notepad".into(),
+      },
+    );
+  }
+
+  if contains_any(&lowered, &["open explorer", "file explorer", "explorer"]) {
+    return direct_plan(
+      "I can launch File Explorer right now.",
+      vec![
+        step("plan-explorer-1", "Match command", "Mapped request to Explorer launch", "done"),
+        step("plan-explorer-2", "Run app launch", "Start explorer.exe", "ready"),
+      ],
+      LocalAction {
+        kind: "open_app".into(),
+        target: "explorer".into(),
+        label: "File Explorer".into(),
+      },
+    );
+  }
+
+  unsupported_plan()
 }
 
 #[tauri::command]
@@ -174,7 +191,42 @@ fn execute_local_action(action: LocalAction) -> Result<ActionExecutionResult, St
   match action.kind.as_str() {
     "open_folder" => open_folder(&action.target, &action.label),
     "open_url" => open_url(&action.target, &action.label),
+    "open_app" => open_app(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
+  }
+}
+
+fn direct_plan(reply: &str, steps: Vec<ActionItem>, action: LocalAction) -> CommandPlan {
+  CommandPlan {
+    assistant_reply: reply.into(),
+    risk_level: "low-risk".into(),
+    can_execute_directly: true,
+    steps,
+    suggested_action: Some(action),
+  }
+}
+
+fn unsupported_plan() -> CommandPlan {
+  CommandPlan {
+    assistant_reply: "This command is not implemented yet. I will not pretend to run it.".into(),
+    risk_level: "not-implemented".into(),
+    can_execute_directly: false,
+    steps: vec![
+      step("plan-unsupported-1", "Read request", "Parsed the request text", "done"),
+      step(
+        "plan-unsupported-2",
+        "Check registry",
+        "No real desktop action is wired for this command yet",
+        "done",
+      ),
+      step(
+        "plan-unsupported-3",
+        "Stop honestly",
+        "Execution is blocked until a real adapter exists",
+        "waiting",
+      ),
+    ],
+    suggested_action: None,
   }
 }
 
@@ -186,8 +238,8 @@ fn open_folder(target: &str, label: &str) -> Result<ActionExecutionResult, Strin
 
   Ok(ActionExecutionResult {
     ok: true,
-    summary: format!("已经帮你打开 {label}。"),
-    details: vec![target.into(), "通过 Windows 文件管理器执行".into()],
+    summary: format!("Opened {label}."),
+    details: vec![target.into(), "Executed through Windows Explorer".into()],
   })
 }
 
@@ -199,9 +251,45 @@ fn open_url(target: &str, label: &str) -> Result<ActionExecutionResult, String> 
 
   Ok(ActionExecutionResult {
     ok: true,
-    summary: format!("已经帮你打开 {label}。"),
-    details: vec![target.into(), "通过系统默认浏览器执行".into()],
+    summary: format!("Opened {label}."),
+    details: vec![target.into(), "Executed through the default browser".into()],
   })
+}
+
+fn open_app(target: &str, label: &str) -> Result<ActionExecutionResult, String> {
+  let launched = match target {
+    "chrome" => try_spawn_any(&[
+      r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+      r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]),
+    "edge" => try_spawn_any(&[
+      r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+      r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ]),
+    "notepad" => Command::new("notepad.exe").spawn().is_ok(),
+    "explorer" => Command::new("explorer.exe").spawn().is_ok(),
+    _ => false,
+  };
+
+  if !launched {
+    return Err(format!("Failed to launch {label}."));
+  }
+
+  Ok(ActionExecutionResult {
+    ok: true,
+    summary: format!("Launched {label}."),
+    details: vec![format!("target={target}")],
+  })
+}
+
+fn try_spawn_any(candidates: &[&str]) -> bool {
+  candidates
+    .iter()
+    .any(|candidate| Command::new(candidate).spawn().is_ok())
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+  needles.iter().any(|needle| haystack.contains(needle))
 }
 
 fn step(id: &str, title: &str, detail: &str, state: &str) -> ActionItem {
