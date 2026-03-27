@@ -144,6 +144,7 @@ hotkey ctrl,s
 watch screen stock
 screen intent coding
 watch intent trading
+latest screen intent
 move mouse 960,540
 right click
 scroll down 400

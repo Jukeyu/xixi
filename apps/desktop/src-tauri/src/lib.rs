@@ -937,6 +937,35 @@ fn plan_user_request(request: String) -> CommandPlan {
     }
   }
 
+  if lowered == "latest screen intent"
+    || lowered == "screen intent report"
+    || lowered == "intent report"
+    || lowered == "what is on screen"
+  {
+    return direct_plan(
+      "I can read the latest screen-intent observation report now.",
+      vec![
+        step(
+          "plan-intent-report-1",
+          "Resolve command",
+          "Matched latest intent report query",
+          "done",
+        ),
+        step(
+          "plan-intent-report-2",
+          "Read latest run log",
+          "Load most recent screen_intent_watch log",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "read_intent_report".into(),
+        target: "screen_intent_watch".into(),
+        label: "Latest Screen Intent Report".into(),
+      },
+    );
+  }
+
   if let Some(site_target) = extract_after_prefix_case_insensitive(
     trimmed,
     &["open site ", "open website ", "open url ", "visit "],
@@ -1023,6 +1052,7 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
     "search_web" => open_url(&action.target, &action.label),
     "open_app" => open_app(&action.target, &action.label),
     "run_script" => run_script(&action.target, &action.label),
+    "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
   };
 
@@ -2319,6 +2349,131 @@ fn run_script(target: &str, label: &str) -> Result<(String, Vec<String>), String
   Ok((format!("Started script skill {label}."), details))
 }
 
+fn read_latest_screen_intent_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let runs_dir = skills_runs_dir();
+  let entries = fs::read_dir(&runs_dir)
+    .map_err(|error| format!("Cannot read script runs folder {}: {error}", runs_dir.to_string_lossy()))?;
+
+  let mut latest: Option<(SystemTime, PathBuf)> = None;
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.extension().and_then(|ext| ext.to_str()) != Some("log") {
+      continue;
+    }
+    let filename = path
+      .file_name()
+      .and_then(|name| name.to_str())
+      .unwrap_or_default()
+      .to_lowercase();
+    if !filename.contains("screen_intent_watch") {
+      continue;
+    }
+    let modified = entry
+      .metadata()
+      .ok()
+      .and_then(|meta| meta.modified().ok())
+      .unwrap_or(UNIX_EPOCH);
+
+    let should_replace = match latest.as_ref() {
+      Some((current_modified, _)) => modified > *current_modified,
+      None => true,
+    };
+
+    if should_replace {
+      latest = Some((modified, path));
+    }
+  }
+
+  let (_, latest_log_path) = latest.ok_or_else(|| {
+    "No screen intent logs found yet. Run `screen intent` first and wait for completion.".to_string()
+  })?;
+
+  let content = fs::read_to_string(&latest_log_path)
+    .map_err(|error| format!("Cannot read intent run log {}: {error}", latest_log_path.to_string_lossy()))?;
+
+  let mut result_json = None;
+  for line in content.lines().rev() {
+    if let Some((_, value)) = line.split_once("INTENT_RESULT_JSON=") {
+      result_json = Some(value.trim().to_string());
+      break;
+    }
+    let trimmed = line.trim();
+    if trimmed.starts_with('{') && trimmed.contains("\"dominant_intent\"") {
+      result_json = Some(trimmed.to_string());
+      break;
+    }
+  }
+
+  let result_json = result_json.ok_or_else(|| {
+    "Latest intent run log does not contain INTENT_RESULT_JSON yet. Wait for script to finish and retry."
+      .to_string()
+  })?;
+
+  let parsed: serde_json::Value = serde_json::from_str(&result_json)
+    .map_err(|error| format!("Failed to parse intent report JSON from run log: {error}"))?;
+
+  let dominant_intent = parsed
+    .get("dominant_intent")
+    .and_then(|value| value.as_str())
+    .unwrap_or("unknown");
+  let dominant_process = parsed
+    .get("dominant_process")
+    .and_then(|value| value.as_str())
+    .unwrap_or("");
+  let dominant_window = parsed
+    .get("dominant_window_title")
+    .and_then(|value| value.as_str())
+    .unwrap_or("");
+  let samples_collected = parsed
+    .get("samples_collected")
+    .and_then(|value| value.as_u64())
+    .unwrap_or(0);
+
+  let mut details = vec![
+    format!("source={target}"),
+    format!("run_log={}", latest_log_path.to_string_lossy()),
+    format!("dominant_intent={dominant_intent}"),
+    format!("samples_collected={samples_collected}"),
+  ];
+
+  if !dominant_process.trim().is_empty() {
+    details.push(format!("dominant_process={dominant_process}"));
+  }
+  if !dominant_window.trim().is_empty() {
+    details.push(format!("dominant_window_title={}", truncate_error_text(dominant_window, 160)));
+  }
+
+  if let Some(commands) = parsed
+    .get("suggested_commands")
+    .and_then(|value| value.as_array())
+    .map(|items| {
+      items
+        .iter()
+        .filter_map(|item| item.as_str())
+        .take(4)
+        .collect::<Vec<_>>()
+    })
+    .filter(|items| !items.is_empty())
+  {
+    details.push(format!("suggested_commands={}", commands.join(" | ")));
+  }
+
+  let summary = if dominant_intent == "unknown" {
+    format!("{label}: no clear dominant intent yet.")
+  } else {
+    format!(
+      "{label}: {dominant_intent} (process: {}, samples: {samples_collected}).",
+      if dominant_process.is_empty() {
+        "unknown"
+      } else {
+        dominant_process
+      }
+    )
+  };
+
+  Ok((summary, details))
+}
+
 fn try_spawn_any(candidates: &[&str]) -> bool {
   candidates
     .iter()
@@ -2752,6 +2907,11 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "For Python scripts, ensure python is installed and available in PATH.".into(),
       "Some scripts need extra packages: mss, pillow, pytesseract, pyautogui.".into(),
     ],
+    "read_intent_report" => vec![
+      "Run `screen intent` first so a fresh report log is generated.".into(),
+      "Wait for `screen_intent_watch.py` to finish and write INTENT_RESULT_JSON.".into(),
+      "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_intent_watch log.".into(),
+    ],
     _ => vec!["Retry later or use a simpler supported command phrase.".into()],
   }
 }
@@ -3082,6 +3242,24 @@ mod tests {
     assert_eq!(
       payload.input,
       Some("goal=review_code duration=18 interval=1.2 samples=8".to_string())
+    );
+  }
+
+  #[test]
+  fn plans_latest_screen_intent_report_request() {
+    let plan = plan_user_request("latest screen intent".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_intent_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("screen_intent_watch")
     );
   }
 
