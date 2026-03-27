@@ -94,6 +94,7 @@ screen intent coding
 watch screen behavior workflow
 latest screen intent
 latest screen behavior
+latest screen watch
 desktop status
 latest screen summary
 
@@ -102,6 +103,9 @@ page agent click example.com More information
 latest page agent
 
 right click 960,540
+click 960,540
+double click 960,540
+drag mouse 760,420 to 1120,640
 human move 960,540
 human click 920,520
 human drag 760,420 to 1080,640

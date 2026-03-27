@@ -757,6 +757,98 @@ fn plan_user_request(request: String) -> CommandPlan {
     }
   }
 
+  if let Some(raw_click) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &["click ", "left click ", "mouse click ", "click mouse "],
+  ) {
+    if let Some((x, y)) = parse_coordinate_pair(&raw_click) {
+      if let Ok(action) = build_run_script_action(
+        "desktop_skill_ops.py",
+        Some(format!("click:{x},{y}")),
+        "Desktop Skill Ops (click at coordinate)",
+      ) {
+        return action_plan(
+          "I can move to that coordinate and perform a left-click.",
+          "high-risk",
+          vec![
+            step("plan-click-at-1", "Parse coordinates", &format!("Resolved x={x}, y={y}"), "done"),
+            step("plan-click-at-2", "Build script payload", "Prepared click:x,y command", "done"),
+            step("plan-click-at-3", "Run local script", "Execute click at coordinate", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_double_click) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &["double click ", "double-click ", "mouse double click "],
+  ) {
+    if let Some((x, y)) = parse_coordinate_pair(&raw_double_click) {
+      if let Ok(action) = build_run_script_action(
+        "desktop_skill_ops.py",
+        Some(format!("doubleclick:{x},{y}")),
+        "Desktop Skill Ops (double click at coordinate)",
+      ) {
+        return action_plan(
+          "I can move to that coordinate and perform a double-click.",
+          "high-risk",
+          vec![
+            step(
+              "plan-doubleclick-at-1",
+              "Parse coordinates",
+              &format!("Resolved x={x}, y={y}"),
+              "done",
+            ),
+            step(
+              "plan-doubleclick-at-2",
+              "Build script payload",
+              "Prepared doubleclick:x,y command",
+              "done",
+            ),
+            step(
+              "plan-doubleclick-at-3",
+              "Run local script",
+              "Execute double-click at coordinate",
+              "ready",
+            ),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_drag) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &["drag mouse ", "mouse drag ", "drag cursor ", "drag "],
+  ) {
+    if let Some((x1, y1, x2, y2)) = parse_coordinate_quad(&raw_drag) {
+      if let Ok(action) = build_run_script_action(
+        "desktop_skill_ops.py",
+        Some(format!("drag:{x1},{y1}>{x2},{y2}")),
+        "Desktop Skill Ops (drag)",
+      ) {
+        return action_plan(
+          "I can drag the cursor between those coordinates.",
+          "high-risk",
+          vec![
+            step(
+              "plan-drag-1",
+              "Parse coordinates",
+              &format!("Resolved start=({x1},{y1}) end=({x2},{y2})"),
+              "done",
+            ),
+            step("plan-drag-2", "Build script payload", "Prepared drag:x1,y1>x2,y2 command", "done"),
+            step("plan-drag-3", "Run local script", "Execute drag action", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
   if let Some(raw_human_move) =
     extract_after_prefix_case_insensitive(trimmed, &["human move ", "humanized move ", "smooth move "])
   {
@@ -1268,6 +1360,35 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if lowered == "latest screen watch"
+    || lowered == "screen watch report"
+    || lowered == "latest watch report"
+    || lowered == "latest ocr watch"
+  {
+    return direct_plan(
+      "I can read the latest screen-watch OCR report now.",
+      vec![
+        step(
+          "plan-watch-report-1",
+          "Resolve command",
+          "Matched latest screen-watch report query",
+          "done",
+        ),
+        step(
+          "plan-watch-report-2",
+          "Read latest run log",
+          "Load most recent screen_watch_ocr log",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "read_watch_report".into(),
+        target: "screen_watch_ocr".into(),
+        label: "Latest Screen Watch Report".into(),
+      },
+    );
+  }
+
   if lowered == "latest screen summary"
     || lowered == "screen summary"
     || lowered == "latest desktop summary"
@@ -1508,6 +1629,7 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
     "run_script" => run_script(&action.target, &action.label),
     "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
     "read_behavior_report" => read_latest_screen_behavior_report(&action.target, &action.label),
+    "read_watch_report" => read_latest_screen_watch_report(&action.target, &action.label),
     "read_screen_summary_report" => read_latest_screen_summary_report(&action.target, &action.label),
     "read_page_agent_report" => read_latest_page_agent_report(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
@@ -1848,6 +1970,7 @@ fn ensure_skills_dir() -> Result<(), String> {
   ensure_default_script(
     &scripts_dir.join("screen_watch_ocr.py"),
     r#"import datetime
+import json
 import time
 import sys
 
@@ -1929,6 +2052,7 @@ def main():
 
     hits = 0
     scans = 0
+    hit_previews = []
     started = time.time()
     with mss.mss() as sct:
         monitor = region or sct.monitors[1]
@@ -1940,11 +2064,25 @@ def main():
             if keyword in text.lower():
                 hits += 1
                 preview = " ".join(text.split())[:180]
+                if preview and len(hit_previews) < 5:
+                    hit_previews.append(preview)
                 log(f"HIT {hits}/{max_hits}: keyword found, preview={preview}")
                 if hits >= max_hits:
                     break
             time.sleep(interval)
 
+    elapsed = max(0.0, time.time() - started)
+    result = {
+        "keyword": keyword,
+        "scans": scans,
+        "hits": hits,
+        "duration_sec": round(elapsed, 3),
+        "interval_sec": interval,
+        "max_hits": max_hits,
+        "region": opts["region"] or "full-screen",
+        "hit_previews": hit_previews,
+    }
+    log(f"WATCH_RESULT_JSON={json.dumps(result, ensure_ascii=False)}")
     log(f"done scans={scans} hits={hits}")
 
 if __name__ == '__main__':
@@ -3203,10 +3341,20 @@ def parse_pair(text: str):
     except Exception:
         return None
 
+def parse_drag(text: str):
+    if ">" not in text:
+        return None
+    start_raw, end_raw = text.split(">", 1)
+    start = parse_pair(start_raw.strip())
+    end = parse_pair(end_raw.strip())
+    if not start or not end:
+        return None
+    return start[0], start[1], end[0], end[1]
+
 def main():
     raw = sys.argv[1] if len(sys.argv) > 1 else ""
     if not raw:
-        log("usage: move:x,y | click | doubleclick | rightclick[:x,y] | scroll:n | type:text | press:key | hotkey:key1,key2 | wait:seconds")
+        log("usage: move:x,y | click[:x,y] | doubleclick[:x,y] | rightclick[:x,y] | drag:x1,y1>x2,y2 | scroll:n | type:text | press:key | hotkey:key1,key2 | wait:seconds")
         raise SystemExit(1)
 
     if blocked_command(raw):
@@ -3242,9 +3390,29 @@ def main():
         log("ok click")
         return
 
+    if lowered.startswith("click:"):
+        pair = parse_pair(cmd.split(":", 1)[1].strip())
+        if not pair:
+            log("invalid click format, expected click:x,y")
+            raise SystemExit(1)
+        pyautogui.moveTo(pair[0], pair[1], duration=0.2)
+        pyautogui.click()
+        log("ok click at coordinate")
+        return
+
     if lowered == "doubleclick":
         pyautogui.doubleClick()
         log("ok doubleclick")
+        return
+
+    if lowered.startswith("doubleclick:"):
+        pair = parse_pair(cmd.split(":", 1)[1].strip())
+        if not pair:
+            log("invalid doubleclick format, expected doubleclick:x,y")
+            raise SystemExit(1)
+        pyautogui.moveTo(pair[0], pair[1], duration=0.2)
+        pyautogui.doubleClick()
+        log("ok doubleclick at coordinate")
         return
 
     if lowered.startswith("rightclick:"):
@@ -3260,6 +3428,19 @@ def main():
     if lowered == "rightclick":
         pyautogui.rightClick()
         log("ok rightclick")
+        return
+
+    if lowered.startswith("drag:"):
+        drag = parse_drag(cmd.split(":", 1)[1].strip())
+        if not drag:
+            log("invalid drag format, expected drag:x1,y1>x2,y2")
+            raise SystemExit(1)
+        x1, y1, x2, y2 = drag
+        pyautogui.moveTo(x1, y1, duration=0.2)
+        pyautogui.mouseDown()
+        pyautogui.moveTo(x2, y2, duration=0.3)
+        pyautogui.mouseUp()
+        log("ok drag")
         return
 
     if lowered.startswith("scroll:"):
@@ -3663,6 +3844,122 @@ fn run_script(target: &str, label: &str) -> Result<(String, Vec<String>), String
   }
 
   Ok((format!("Started script skill {label}."), details))
+}
+
+fn read_latest_screen_watch_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let runs_dir = skills_runs_dir();
+  let entries = fs::read_dir(&runs_dir)
+    .map_err(|error| format!("Cannot read script runs folder {}: {error}", runs_dir.to_string_lossy()))?;
+
+  let mut latest: Option<(SystemTime, PathBuf)> = None;
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.extension().and_then(|ext| ext.to_str()) != Some("log") {
+      continue;
+    }
+    let filename = path
+      .file_name()
+      .and_then(|name| name.to_str())
+      .unwrap_or_default()
+      .to_lowercase();
+    if !filename.contains("screen_watch_ocr") {
+      continue;
+    }
+    let modified = entry
+      .metadata()
+      .ok()
+      .and_then(|meta| meta.modified().ok())
+      .unwrap_or(UNIX_EPOCH);
+
+    let should_replace = match latest.as_ref() {
+      Some((current_modified, _)) => modified > *current_modified,
+      None => true,
+    };
+
+    if should_replace {
+      latest = Some((modified, path));
+    }
+  }
+
+  let (_, latest_log_path) = latest.ok_or_else(|| {
+    "No screen-watch logs found yet. Run `watch screen <keyword>` first and wait for completion."
+      .to_string()
+  })?;
+
+  let content = fs::read_to_string(&latest_log_path)
+    .map_err(|error| format!("Cannot read watch run log {}: {error}", latest_log_path.to_string_lossy()))?;
+
+  let mut result_json = None;
+  for line in content.lines().rev() {
+    if let Some((_, value)) = line.split_once("WATCH_RESULT_JSON=") {
+      result_json = Some(value.trim().to_string());
+      break;
+    }
+    let trimmed = line.trim();
+    if trimmed.starts_with('{') && trimmed.contains("\"keyword\"") && trimmed.contains("\"hits\"") {
+      result_json = Some(trimmed.to_string());
+      break;
+    }
+  }
+
+  let result_json = result_json.ok_or_else(|| {
+    "Latest screen-watch run log does not contain WATCH_RESULT_JSON yet. Wait for script to finish and retry."
+      .to_string()
+  })?;
+
+  let parsed: serde_json::Value = serde_json::from_str(&result_json)
+    .map_err(|error| format!("Failed to parse screen-watch report JSON from run log: {error}"))?;
+
+  let keyword = parsed.get("keyword").and_then(|value| value.as_str()).unwrap_or("unknown");
+  let scans = parsed.get("scans").and_then(|value| value.as_u64()).unwrap_or(0);
+  let hits = parsed.get("hits").and_then(|value| value.as_u64()).unwrap_or(0);
+  let duration_sec = parsed
+    .get("duration_sec")
+    .and_then(|value| value.as_f64())
+    .unwrap_or(0.0);
+  let interval_sec = parsed
+    .get("interval_sec")
+    .and_then(|value| value.as_f64())
+    .unwrap_or(0.0);
+  let max_hits = parsed.get("max_hits").and_then(|value| value.as_u64()).unwrap_or(0);
+  let region = parsed.get("region").and_then(|value| value.as_str()).unwrap_or("full-screen");
+
+  let mut details = vec![
+    format!("source={target}"),
+    format!("run_log={}", latest_log_path.to_string_lossy()),
+    format!("keyword={keyword}"),
+    format!("scans={scans}"),
+    format!("hits={hits}"),
+    format!("duration_sec={duration_sec:.2}"),
+    format!("interval_sec={interval_sec:.2}"),
+    format!("max_hits={max_hits}"),
+    format!("region={region}"),
+  ];
+
+  if let Some(previews) = parsed
+    .get("hit_previews")
+    .and_then(|value| value.as_array())
+    .map(|items| {
+      items
+        .iter()
+        .filter_map(|item| item.as_str())
+        .filter(|item| !item.trim().is_empty())
+        .take(3)
+        .map(|item| truncate_error_text(item, 120))
+        .collect::<Vec<_>>()
+    })
+    .filter(|items| !items.is_empty())
+  {
+    details.push(format!("hit_previews={}", previews.join(" | ")));
+  }
+
+  let summary = if hits == 0 {
+    format!("{label}: keyword={keyword}, no hits found in {scans} scans.")
+  } else {
+    format!("{label}: keyword={keyword}, hits={hits} in {scans} scans.")
+  };
+
+  Ok((summary, details))
 }
 
 fn read_latest_screen_intent_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
@@ -4536,6 +4833,11 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "Wait for `screen_behavior_watch.py` to finish and write BEHAVIOR_RESULT_JSON.".into(),
       "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_behavior_watch log.".into(),
     ],
+    "read_watch_report" => vec![
+      "Run `watch screen <keyword>` first so a fresh OCR watch log is generated.".into(),
+      "Wait for `screen_watch_ocr.py` to finish and write WATCH_RESULT_JSON.".into(),
+      "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_watch_ocr log.".into(),
+    ],
     "read_screen_summary_report" => vec![
       "Run both `screen intent` and `watch screen behavior` first so fresh logs exist.".into(),
       "Wait for both scripts to finish before requesting `latest screen summary`.".into(),
@@ -4920,6 +5222,24 @@ mod tests {
   }
 
   #[test]
+  fn plans_latest_screen_watch_report_request() {
+    let plan = plan_user_request("latest screen watch".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_watch_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("screen_watch_ocr")
+    );
+  }
+
+  #[test]
   fn plans_latest_screen_summary_report_request() {
     let plan = plan_user_request("latest screen summary".to_string());
     assert!(plan.can_execute_directly);
@@ -5101,6 +5421,72 @@ mod tests {
     .expect("payload should parse");
     assert_eq!(payload.script, "desktop_skill_ops.py");
     assert_eq!(payload.input, Some("rightclick:960,540".to_string()));
+  }
+
+  #[test]
+  fn plans_click_request_with_coordinates() {
+    let plan = plan_user_request("click 960,540".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "desktop_skill_ops.py");
+    assert_eq!(payload.input, Some("click:960,540".to_string()));
+  }
+
+  #[test]
+  fn plans_double_click_request_with_coordinates() {
+    let plan = plan_user_request("double click 960,540".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "desktop_skill_ops.py");
+    assert_eq!(payload.input, Some("doubleclick:960,540".to_string()));
+  }
+
+  #[test]
+  fn plans_drag_mouse_request_with_coordinates() {
+    let plan = plan_user_request("drag mouse 760,420 to 1120,640".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "desktop_skill_ops.py");
+    assert_eq!(payload.input, Some("drag:760,420>1120,640".to_string()));
   }
 
   #[test]

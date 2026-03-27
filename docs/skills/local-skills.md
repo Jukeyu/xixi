@@ -169,7 +169,10 @@ run skill desktop_action_safe move:960,540
 run skill desktop_action_safe type:hello from xixi
 run skill desktop_action_safe hotkey:ctrl,s
 run skill desktop_skill_ops rightclick
+run skill desktop_skill_ops click:980,540
+run skill desktop_skill_ops doubleclick:980,540
 run skill desktop_skill_ops rightclick:980,540
+run skill desktop_skill_ops drag:780,420>1120,640
 run skill desktop_skill_ops scroll:-400
 run skill desktop_skill_ops wait:1.2
 run skill human_input_ops move:980,540
@@ -199,6 +202,7 @@ watch intent trading
 latest screen intent
 watch screen behavior workflow
 latest screen behavior
+latest screen watch
 desktop status
 screen summary
 latest screen summary
@@ -210,8 +214,11 @@ human click 980,540
 human drag 780,420 to 1120,640
 human type hello from xixi
 move mouse 960,540
+click 960,540
+double click 960,540
 right click
 right click 960,540
+drag mouse 760,420 to 1120,640
 scroll down 400
 ```
 
