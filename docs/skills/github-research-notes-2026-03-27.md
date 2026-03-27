@@ -60,6 +60,32 @@ This note records practical open-source options for:
    License: MIT  
    Reason not default: architecture is much heavier than current local-script skill runtime; useful as future reference for multi-device orchestration patterns.
 
+## Academic References Applied
+
+1. ScreenAI (UI + visual understanding)  
+   Paper: https://arxiv.org/abs/2402.04615  
+   Applied takeaway: combine multiple visual signals (window context + OCR text) instead of relying on one cue.
+
+2. SeeClick (GUI grounding)  
+   Paper: https://arxiv.org/abs/2401.10935  
+   Applied takeaway: keep action planning grounded in observed on-screen evidence and attach evidence fields in reports.
+
+3. OSWorld benchmark (real computer environments)  
+   Paper: https://arxiv.org/abs/2404.07972  
+   Applied takeaway: prefer robust real-environment logging and explicit failure modes over fragile "demo-only" pipelines.
+
+4. AppAgent (multimodal app interaction)  
+   Paper: https://arxiv.org/abs/2312.13771  
+   Applied takeaway: model behavior/intention as staged perception-to-action flow, with deterministic local safety checks before execution.
+
+5. Mouse movement representation for attention prediction  
+   Paper: https://arxiv.org/abs/2006.01644  
+   Applied takeaway: add cursor trajectory features (distance, delta, switching patterns) in `screen_behavior_watch.py`.
+
+6. Fitts' law (classic HCI motor model)  
+   Source: https://pubmed.ncbi.nlm.nih.gov/13174710/  
+   Applied takeaway: use distance-based movement-time estimation in `human_input_ops.py` for smoother human-like pointer movement.
+
 ## Integration Rules Used in xixi
 
 1. Keep script execution inside `%LOCALAPPDATA%\\xixi\\skills\\scripts`.

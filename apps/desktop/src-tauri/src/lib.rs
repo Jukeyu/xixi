@@ -681,6 +681,104 @@ fn plan_user_request(request: String) -> CommandPlan {
     }
   }
 
+  if let Some(raw_human_move) =
+    extract_after_prefix_case_insensitive(trimmed, &["human move ", "humanized move ", "smooth move "])
+  {
+    if let Some((x, y)) = parse_coordinate_pair(&raw_human_move) {
+      if let Ok(action) = build_run_script_action(
+        "human_input_ops.py",
+        Some(format!("move:{x},{y}")),
+        "Human Input Ops (move)",
+      ) {
+        return action_plan(
+          "I can move the cursor with a smoother human-like trajectory.",
+          "high-risk",
+          vec![
+            step("plan-human-move-1", "Parse coordinates", &format!("Resolved x={x}, y={y}"), "done"),
+            step("plan-human-move-2", "Build script payload", "Prepared human move command", "done"),
+            step("plan-human-move-3", "Run local script", "Execute humanized cursor move", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_human_click) =
+    extract_after_prefix_case_insensitive(trimmed, &["human click ", "smooth click "])
+  {
+    if let Some((x, y)) = parse_coordinate_pair(&raw_human_click) {
+      if let Ok(action) = build_run_script_action(
+        "human_input_ops.py",
+        Some(format!("click:{x},{y}")),
+        "Human Input Ops (click)",
+      ) {
+        return action_plan(
+          "I can move and click with a human-like path.",
+          "high-risk",
+          vec![
+            step("plan-human-click-1", "Parse coordinates", &format!("Resolved x={x}, y={y}"), "done"),
+            step("plan-human-click-2", "Build script payload", "Prepared human click command", "done"),
+            step("plan-human-click-3", "Run local script", "Execute humanized click action", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_human_drag) =
+    extract_after_prefix_case_insensitive(trimmed, &["human drag ", "smooth drag "])
+  {
+    if let Some((x1, y1, x2, y2)) = parse_coordinate_quad(&raw_human_drag) {
+      if let Ok(action) = build_run_script_action(
+        "human_input_ops.py",
+        Some(format!("drag:{x1},{y1}>{x2},{y2}")),
+        "Human Input Ops (drag)",
+      ) {
+        return action_plan(
+          "I can perform a human-like drag trajectory between two points.",
+          "high-risk",
+          vec![
+            step(
+              "plan-human-drag-1",
+              "Parse coordinates",
+              &format!("Resolved start=({x1},{y1}) end=({x2},{y2})"),
+              "done",
+            ),
+            step("plan-human-drag-2", "Build script payload", "Prepared human drag command", "done"),
+            step("plan-human-drag-3", "Run local script", "Execute humanized drag action", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_human_type) =
+    extract_after_prefix_case_insensitive(trimmed, &["human type ", "smooth type "])
+  {
+    let text = raw_human_type.trim();
+    if !text.is_empty() {
+      if let Ok(action) = build_run_script_action(
+        "human_input_ops.py",
+        Some(format!("type:{text}")),
+        "Human Input Ops (type)",
+      ) {
+        return action_plan(
+          "I can type text with human-like randomized cadence.",
+          "high-risk",
+          vec![
+            step("plan-human-type-1", "Parse text", "Extracted typing content", "done"),
+            step("plan-human-type-2", "Build script payload", "Prepared human type command", "done"),
+            step("plan-human-type-3", "Run local script", "Execute humanized typing", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
   if let Some(raw_scroll_up) = extract_after_prefix_case_insensitive(trimmed, &["scroll up ", "scrollup "]) {
     let amount = parse_first_int(&raw_scroll_up).unwrap_or(350).abs();
     if let Ok(action) = build_run_script_action(
@@ -918,6 +1016,48 @@ fn plan_user_request(request: String) -> CommandPlan {
 
   if let Some(raw_watch) = extract_after_prefix_case_insensitive(trimmed, &["watch screen ", "screen watch "]) {
     let keyword = raw_watch.trim();
+    let keyword_lower = keyword.to_lowercase();
+    if keyword_lower.starts_with("behavior") {
+      let goal = keyword["behavior".len()..]
+        .trim()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("_");
+      let input = if goal.is_empty() {
+        "goal=workflow duration=16 interval=1.0 samples=10".to_string()
+      } else {
+        format!("goal={goal} duration=16 interval=1.0 samples=10")
+      };
+      if let Ok(action) =
+        build_run_script_action("screen_behavior_watch.py", Some(input), "Screen Behavior Watch")
+      {
+        return action_plan(
+          "I can run a real screen+mouse behavior observer now.",
+          "medium-risk",
+          vec![
+            step(
+              "plan-behavior-1",
+              "Parse behavior hint",
+              "Resolved behavior observation hint",
+              "done",
+            ),
+            step(
+              "plan-behavior-2",
+              "Build script payload",
+              "Prepared screen_behavior_watch args",
+              "done",
+            ),
+            step(
+              "plan-behavior-3",
+              "Run local script",
+              "Observe screen dynamics + cursor trajectory",
+              "ready",
+            ),
+          ],
+          action,
+        );
+      }
+    }
     let input = if keyword.is_empty() {
       "keyword=stock duration=20 interval=1 max_hits=2".to_string()
     } else {
@@ -935,6 +1075,121 @@ fn plan_user_request(request: String) -> CommandPlan {
         action,
       );
     }
+  }
+
+  if lowered == "watch screen behavior"
+    || lowered == "screen behavior watch"
+    || lowered == "watch desktop behavior"
+    || lowered == "watch mouse behavior"
+  {
+    if let Ok(action) = build_run_script_action(
+      "screen_behavior_watch.py",
+      Some("goal=workflow duration=16 interval=1.0 samples=10".to_string()),
+      "Screen Behavior Watch",
+    ) {
+      return action_plan(
+        "I can run a real screen+mouse behavior observer now.",
+        "medium-risk",
+        vec![
+          step(
+            "plan-behavior-1",
+            "Match behavior command",
+            "Using default behavior-observation profile",
+            "done",
+          ),
+          step(
+            "plan-behavior-2",
+            "Build script payload",
+            "Prepared screen_behavior_watch args",
+            "done",
+          ),
+          step(
+            "plan-behavior-3",
+            "Run local script",
+            "Observe screen dynamics + cursor trajectory",
+            "ready",
+          ),
+        ],
+        action,
+      );
+    }
+  }
+
+  if let Some(raw_behavior) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &[
+      "watch screen behavior ",
+      "screen behavior watch ",
+      "watch desktop behavior ",
+      "watch mouse behavior ",
+    ],
+  ) {
+    let goal = raw_behavior
+      .split_whitespace()
+      .collect::<Vec<_>>()
+      .join("_");
+    let input = if goal.is_empty() {
+      "goal=workflow duration=16 interval=1.0 samples=10".to_string()
+    } else {
+      format!("goal={goal} duration=16 interval=1.0 samples=10")
+    };
+    if let Ok(action) =
+      build_run_script_action("screen_behavior_watch.py", Some(input), "Screen Behavior Watch")
+    {
+      return action_plan(
+        "I can run a real screen+mouse behavior observer now.",
+        "medium-risk",
+        vec![
+          step(
+            "plan-behavior-1",
+            "Parse behavior hint",
+            "Resolved behavior observation hint",
+            "done",
+          ),
+          step(
+            "plan-behavior-2",
+            "Build script payload",
+            "Prepared screen_behavior_watch args",
+            "done",
+          ),
+          step(
+            "plan-behavior-3",
+            "Run local script",
+            "Observe screen dynamics + cursor trajectory",
+            "ready",
+          ),
+        ],
+        action,
+      );
+    }
+  }
+
+  if lowered == "latest screen behavior"
+    || lowered == "screen behavior report"
+    || lowered == "latest behavior report"
+  {
+    return direct_plan(
+      "I can read the latest screen-behavior observation report now.",
+      vec![
+        step(
+          "plan-behavior-report-1",
+          "Resolve command",
+          "Matched latest behavior report query",
+          "done",
+        ),
+        step(
+          "plan-behavior-report-2",
+          "Read latest run log",
+          "Load most recent screen_behavior_watch log",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "read_behavior_report".into(),
+        target: "screen_behavior_watch".into(),
+        label: "Latest Screen Behavior Report".into(),
+      },
+    );
   }
 
   if lowered == "latest screen intent"
@@ -1053,6 +1308,7 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
     "open_app" => open_app(&action.target, &action.label),
     "run_script" => run_script(&action.target, &action.label),
     "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
+    "read_behavior_report" => read_latest_screen_behavior_report(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
   };
 
@@ -1822,6 +2078,544 @@ if __name__ == "__main__":
   )?;
 
   ensure_default_script(
+    &scripts_dir.join("screen_behavior_watch.py"),
+    r#"import ctypes
+import ctypes.wintypes as wintypes
+import datetime
+import json
+import os
+import sys
+import time
+from collections import Counter
+
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+BEHAVIOR_TO_SUGGESTIONS = {
+    "reading_or_idle": [
+        "screen intent research",
+        "watch screen <keyword>",
+    ],
+    "watching_content": [
+        "watch screen <keyword>",
+        "open app edge",
+    ],
+    "navigation_ui": [
+        "open folder downloads",
+        "human click <x,y>",
+    ],
+    "interactive_editing": [
+        "human type <text>",
+        "run skill desktop_skill_ops hotkey:ctrl,s",
+    ],
+    "multitask_switching": [
+        "latest screen intent",
+        "watch screen behavior workflow",
+    ],
+}
+
+class POINT(ctypes.Structure):
+    _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def parse_options(raw: str):
+    defaults = {
+        "goal": "workflow",
+        "duration": "16",
+        "interval": "1.0",
+        "samples": "10",
+        "screen": "1",
+    }
+    text = (raw or "").strip()
+    if not text:
+        return defaults
+
+    parts = [p.strip() for p in text.split() if p.strip()]
+    if parts and "=" not in parts[0]:
+        defaults["goal"] = parts[0]
+
+    for part in parts:
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key in defaults and value:
+            defaults[key] = value
+    return defaults
+
+def parse_float(value: str, default: float, min_v: float, max_v: float):
+    try:
+        parsed = float(value)
+    except Exception:
+        return default
+    return max(min_v, min(max_v, parsed))
+
+def parse_int(value: str, default: int, min_v: int, max_v: int):
+    try:
+        parsed = int(value)
+    except Exception:
+        return default
+    return max(min_v, min(max_v, parsed))
+
+def parse_bool(value: str):
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+def resolve_process_name(pid: int):
+    if not pid:
+        return ""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ""
+        try:
+            size = wintypes.DWORD(1024)
+            buffer = ctypes.create_unicode_buffer(size.value)
+            ok = kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size))
+            if not ok:
+                return ""
+            return os.path.basename(buffer.value).lower()
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return ""
+
+def foreground_window_info():
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return {"title": "", "process": "", "pid": 0}
+
+        length = user32.GetWindowTextLengthW(hwnd)
+        length = max(0, min(length, 2048))
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, len(buffer))
+        title = buffer.value.strip()
+
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        process_name = resolve_process_name(pid.value)
+        return {"title": title, "process": process_name, "pid": int(pid.value)}
+    except Exception:
+        return {"title": "", "process": "", "pid": 0}
+
+def get_cursor_pos():
+    pt = POINT()
+    ok = ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    if not ok:
+        return None
+    return (int(pt.x), int(pt.y))
+
+def cursor_distance(a, b):
+    if not a or not b:
+        return 0.0
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    return (dx * dx + dy * dy) ** 0.5
+
+def build_suggestions(dominant_behavior: str):
+    return BEHAVIOR_TO_SUGGESTIONS.get(
+        dominant_behavior,
+        ["screen intent workflow", "watch screen behavior workflow"],
+    )
+
+def classify_step_behavior(cursor_delta: float, motion_index: float, switched_window: bool):
+    moving = cursor_delta >= 18.0
+    dynamic_screen = motion_index >= 0.045
+    if switched_window and moving:
+        return "multitask_switching"
+    if moving and dynamic_screen:
+        return "interactive_editing"
+    if moving and not dynamic_screen:
+        return "navigation_ui"
+    if (not moving) and dynamic_screen:
+        return "watching_content"
+    return "reading_or_idle"
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    opts = parse_options(raw)
+    goal = opts["goal"]
+    duration = parse_float(opts["duration"], default=16.0, min_v=4.0, max_v=120.0)
+    interval = parse_float(opts["interval"], default=1.0, min_v=0.2, max_v=10.0)
+    samples = parse_int(opts["samples"], default=10, min_v=1, max_v=120)
+    enable_screen_motion = parse_bool(opts["screen"])
+
+    max_by_duration = max(1, int(duration / interval))
+    total_samples = min(samples, max_by_duration)
+
+    log(
+        f"screen_behavior_watch start goal={goal} duration={duration}s interval={interval}s "
+        f"samples={total_samples} screen_motion={enable_screen_motion}"
+    )
+
+    capture_screen_motion = False
+    mss_module = None
+    image_module = None
+    imagechops_module = None
+    imagestat_module = None
+    if enable_screen_motion:
+        try:
+            import mss  # type: ignore
+            from PIL import Image, ImageChops, ImageStat  # type: ignore
+            mss_module = mss
+            image_module = Image
+            imagechops_module = ImageChops
+            imagestat_module = ImageStat
+            capture_screen_motion = True
+        except Exception as error:
+            log("screen motion dependencies missing, fallback to cursor+window mode.")
+            log("install with: pip install mss pillow")
+            log(f"import error: {error}")
+            capture_screen_motion = False
+
+    started_at = time.time()
+    prev_cursor = get_cursor_pos()
+    prev_window_title = ""
+    prev_frame_gray = None
+    behavior_counter = Counter()
+    process_counter = Counter()
+    window_counter = Counter()
+    total_cursor_distance = 0.0
+    motion_values = []
+    rows = []
+
+    if capture_screen_motion:
+        sct_ctx = mss_module.mss()
+        monitor = sct_ctx.monitors[1]
+    else:
+        sct_ctx = None
+        monitor = None
+
+    try:
+        for idx in range(total_samples):
+            info = foreground_window_info()
+            window_title = info.get("title", "")
+            process_name = info.get("process", "")
+
+            cursor_pos = get_cursor_pos()
+            cursor_delta = cursor_distance(prev_cursor, cursor_pos)
+            total_cursor_distance += cursor_delta
+            prev_cursor = cursor_pos
+
+            motion_index = 0.0
+            if capture_screen_motion and sct_ctx is not None and monitor is not None:
+                try:
+                    shot = sct_ctx.grab(monitor)
+                    frame = image_module.frombytes("RGB", shot.size, shot.rgb).convert("L")
+                    if prev_frame_gray is not None:
+                        diff = imagechops_module.difference(prev_frame_gray, frame)
+                        stat = imagestat_module.Stat(diff)
+                        motion_index = float(stat.mean[0]) / 255.0
+                    prev_frame_gray = frame
+                except Exception:
+                    motion_index = 0.0
+
+            switched_window = bool(prev_window_title) and window_title != prev_window_title
+            prev_window_title = window_title
+
+            step_behavior = classify_step_behavior(cursor_delta, motion_index, switched_window)
+            behavior_counter[step_behavior] += 1
+            if process_name:
+                process_counter[process_name] += 1
+            if window_title:
+                window_counter[window_title] += 1
+            motion_values.append(motion_index)
+
+            rows.append(
+                {
+                    "index": idx + 1,
+                    "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+                    "window_title": window_title,
+                    "process": process_name,
+                    "cursor": {"x": cursor_pos[0], "y": cursor_pos[1]} if cursor_pos else None,
+                    "cursor_delta": round(cursor_delta, 2),
+                    "motion_index": round(motion_index, 5),
+                    "step_behavior": step_behavior,
+                }
+            )
+
+            log(
+                f"sample {idx + 1}/{total_samples} process={process_name or '-'} "
+                f"cursor_delta={cursor_delta:.1f} motion={motion_index:.4f} behavior={step_behavior}"
+            )
+
+            if idx < total_samples - 1:
+                elapsed = time.time() - started_at
+                if elapsed + interval > duration:
+                    break
+                time.sleep(interval)
+    finally:
+        if sct_ctx is not None:
+            sct_ctx.close()
+
+    dominant_behavior = behavior_counter.most_common(1)[0][0] if behavior_counter else "unknown"
+    dominant_process = process_counter.most_common(1)[0][0] if process_counter else ""
+    dominant_window = window_counter.most_common(1)[0][0] if window_counter else ""
+    motion_index_avg = (sum(motion_values) / len(motion_values)) if motion_values else 0.0
+
+    result = {
+        "goal_hint": goal,
+        "dominant_behavior": dominant_behavior,
+        "behavior_distribution": dict(behavior_counter),
+        "dominant_process": dominant_process,
+        "dominant_window_title": dominant_window,
+        "samples_collected": len(rows),
+        "duration_sec": round(time.time() - started_at, 2),
+        "motion_index": round(motion_index_avg, 5),
+        "cursor_distance": round(total_cursor_distance, 2),
+        "suggested_commands": build_suggestions(dominant_behavior),
+        "samples": rows,
+    }
+
+    output = json.dumps(result, ensure_ascii=False)
+    print(output, flush=True)
+    log(f"BEHAVIOR_RESULT_JSON={output}")
+
+if __name__ == "__main__":
+    main()
+"#,
+  )?;
+
+  ensure_default_script(
+    &scripts_dir.join("human_input_ops.py"),
+    r#"import datetime
+import math
+import random
+import sys
+import time
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def blocked_command(raw: str) -> bool:
+    lowered = raw.lower().replace(" ", "")
+    blocked = [
+        "hotkey:alt,f4",
+        "hotkey:win,r",
+        "hotkey:win,x",
+        "hotkey:ctrl,alt,del",
+        "press:delete",
+    ]
+    return any(lowered.startswith(item) for item in blocked)
+
+def parse_pair(text: str):
+    values = [v.strip() for v in text.split(",", 1)]
+    if len(values) != 2:
+        return None
+    try:
+        return int(values[0]), int(values[1])
+    except Exception:
+        return None
+
+def parse_drag(text: str):
+    sep = ">" if ">" in text else "->" if "->" in text else None
+    if not sep:
+        return None
+    left, right = text.split(sep, 1)
+    p1 = parse_pair(left.strip())
+    p2 = parse_pair(right.strip())
+    if not p1 or not p2:
+        return None
+    return p1[0], p1[1], p2[0], p2[1]
+
+def clamp(value: float, low: float, high: float):
+    return max(low, min(high, value))
+
+def fitts_duration(distance: float, width: float = 120.0):
+    width = max(20.0, width)
+    idx = math.log2(distance / width + 1.0) if distance > 0 else 0.0
+    mt = 0.15 + 0.18 * idx
+    return clamp(mt, 0.15, 1.4)
+
+def cubic_bezier(t, p0, p1, p2, p3):
+    one = 1.0 - t
+    x = (
+        one * one * one * p0[0]
+        + 3 * one * one * t * p1[0]
+        + 3 * one * t * t * p2[0]
+        + t * t * t * p3[0]
+    )
+    y = (
+        one * one * one * p0[1]
+        + 3 * one * one * t * p1[1]
+        + 3 * one * t * t * p2[1]
+        + t * t * t * p3[1]
+    )
+    return x, y
+
+def move_human(pyautogui, tx: int, ty: int, duration: float = None):
+    sx, sy = pyautogui.position()
+    dx = tx - sx
+    dy = ty - sy
+    distance = (dx * dx + dy * dy) ** 0.5
+    if duration is None:
+        duration = fitts_duration(distance)
+    steps = max(14, min(120, int(duration * 75)))
+
+    base_angle = math.atan2(dy, dx if abs(dx) > 0.001 else 0.001)
+    perpendicular = base_angle + math.pi / 2
+    spread = clamp(distance * 0.18, 18.0, 180.0)
+    jitter1 = random.uniform(-spread, spread)
+    jitter2 = random.uniform(-spread, spread)
+
+    c1 = (
+        sx + dx * 0.33 + math.cos(perpendicular) * jitter1,
+        sy + dy * 0.33 + math.sin(perpendicular) * jitter1,
+    )
+    c2 = (
+        sx + dx * 0.66 + math.cos(perpendicular) * jitter2,
+        sy + dy * 0.66 + math.sin(perpendicular) * jitter2,
+    )
+
+    dt = duration / steps
+    for i in range(1, steps + 1):
+        t = i / steps
+        x, y = cubic_bezier(t, (sx, sy), c1, c2, (tx, ty))
+        pyautogui.moveTo(int(round(x)), int(round(y)), _pause=False)
+        time.sleep(dt)
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    if not raw:
+        log("usage: move:x,y | click[:x,y] | doubleclick[:x,y] | drag:x1,y1>x2,y2 | type:text | press:key | hotkey:key1,key2")
+        raise SystemExit(1)
+
+    if blocked_command(raw):
+        log(f"blocked dangerous command: {raw}")
+        raise SystemExit(2)
+
+    try:
+        import pyautogui
+    except Exception as e:
+        log("missing dependency. install with:")
+        log("pip install pyautogui")
+        log(f"import error: {e}")
+        raise SystemExit(1)
+
+    pyautogui.FAILSAFE = True
+    pyautogui.PAUSE = 0.04
+
+    cmd = raw.strip()
+    lowered = cmd.lower()
+    log(f"human_input_ops received: {cmd}")
+
+    if lowered.startswith("move:"):
+        pair = parse_pair(cmd.split(":", 1)[1].strip())
+        if not pair:
+            log("invalid move format, expected move:x,y")
+            raise SystemExit(1)
+        move_human(pyautogui, pair[0], pair[1], duration=None)
+        log("ok human move")
+        return
+
+    if lowered.startswith("click:"):
+        pair = parse_pair(cmd.split(":", 1)[1].strip())
+        if not pair:
+            log("invalid click format, expected click:x,y")
+            raise SystemExit(1)
+        move_human(pyautogui, pair[0], pair[1], duration=None)
+        pyautogui.click()
+        log("ok human click")
+        return
+
+    if lowered == "click":
+        pyautogui.click()
+        log("ok click")
+        return
+
+    if lowered.startswith("doubleclick:"):
+        pair = parse_pair(cmd.split(":", 1)[1].strip())
+        if not pair:
+            log("invalid doubleclick format, expected doubleclick:x,y")
+            raise SystemExit(1)
+        move_human(pyautogui, pair[0], pair[1], duration=None)
+        pyautogui.doubleClick()
+        log("ok human doubleclick")
+        return
+
+    if lowered == "doubleclick":
+        pyautogui.doubleClick()
+        log("ok doubleclick")
+        return
+
+    if lowered.startswith("drag:"):
+        parsed = parse_drag(cmd.split(":", 1)[1].strip())
+        if not parsed:
+            log("invalid drag format, expected drag:x1,y1>x2,y2")
+            raise SystemExit(1)
+        x1, y1, x2, y2 = parsed
+        move_human(pyautogui, x1, y1, duration=None)
+        pyautogui.mouseDown()
+        try:
+            move_human(pyautogui, x2, y2, duration=fitts_duration(((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5) * 1.15)
+        finally:
+            pyautogui.mouseUp()
+        log("ok human drag")
+        return
+
+    if lowered.startswith("type:"):
+        text = cmd.split(":", 1)[1]
+        if not text:
+            log("empty type text")
+            raise SystemExit(1)
+        for ch in text:
+            pyautogui.typewrite(ch)
+            time.sleep(random.uniform(0.02, 0.11))
+        log("ok human type")
+        return
+
+    if lowered.startswith("press:"):
+        key = cmd.split(":", 1)[1].strip()
+        pyautogui.press(key)
+        log(f"ok press {key}")
+        return
+
+    if lowered.startswith("hotkey:"):
+        keys = [k.strip() for k in cmd.split(":", 1)[1].split(",") if k.strip()]
+        if not keys:
+            log("empty hotkey sequence")
+            raise SystemExit(1)
+        pyautogui.hotkey(*keys)
+        log(f"ok hotkey {keys}")
+        return
+
+    if lowered.startswith("wait:"):
+        try:
+            seconds = float(cmd.split(":", 1)[1].strip())
+        except Exception:
+            seconds = 0.5
+        seconds = clamp(seconds, 0.0, 8.0)
+        time.sleep(seconds)
+        log(f"ok wait {seconds}")
+        return
+
+    log(f"unknown command: {cmd}")
+    raise SystemExit(1)
+
+if __name__ == '__main__':
+    main()
+"#,
+  )?;
+
+  ensure_default_script(
     &scripts_dir.join("safe_desktop_action.py"),
     r#"import datetime
 import sys
@@ -2176,6 +2970,16 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       aliases: Some(vec!["intentwatch".into(), "screenintent".into(), "watchintent".into()]),
     },
     LocalSkillDefinition {
+      id: "screen_behavior_watch".into(),
+      name: "Screen Behavior Watch".into(),
+      description: "Observe screen dynamics + cursor movement and infer behavior state.".into(),
+      kind: "run_script".into(),
+      target_template: "screen_behavior_watch.py".into(),
+      label_template: Some("Screen Behavior Watch".into()),
+      risk_level: Some("medium-risk".into()),
+      aliases: Some(vec!["behaviorwatch".into(), "screenbehavior".into(), "mousebehavior".into()]),
+    },
+    LocalSkillDefinition {
       id: "desktop_action_safe".into(),
       name: "Desktop Action Safe".into(),
       description: "Execute constrained mouse/keyboard actions via script input.".into(),
@@ -2194,6 +2998,16 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       label_template: Some("Desktop Skill Ops".into()),
       risk_level: Some("high-risk".into()),
       aliases: Some(vec!["desktopops".into(), "mouseops".into(), "keyboardops".into()]),
+    },
+    LocalSkillDefinition {
+      id: "human_input_ops".into(),
+      name: "Human Input Ops".into(),
+      description: "Human-like mouse and keyboard operations (smooth move/click/drag/type).".into(),
+      kind: "run_script".into(),
+      target_template: "human_input_ops.py".into(),
+      label_template: Some("Human Input Ops".into()),
+      risk_level: Some("high-risk".into()),
+      aliases: Some(vec!["humaninput".into(), "humanmouse".into(), "smoothinput".into()]),
     },
   ]
 }
@@ -2474,6 +3288,141 @@ fn read_latest_screen_intent_report(target: &str, label: &str) -> Result<(String
   Ok((summary, details))
 }
 
+fn read_latest_screen_behavior_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let runs_dir = skills_runs_dir();
+  let entries = fs::read_dir(&runs_dir)
+    .map_err(|error| format!("Cannot read script runs folder {}: {error}", runs_dir.to_string_lossy()))?;
+
+  let mut latest: Option<(SystemTime, PathBuf)> = None;
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.extension().and_then(|ext| ext.to_str()) != Some("log") {
+      continue;
+    }
+    let filename = path
+      .file_name()
+      .and_then(|name| name.to_str())
+      .unwrap_or_default()
+      .to_lowercase();
+    if !filename.contains("screen_behavior_watch") {
+      continue;
+    }
+    let modified = entry
+      .metadata()
+      .ok()
+      .and_then(|meta| meta.modified().ok())
+      .unwrap_or(UNIX_EPOCH);
+
+    let should_replace = match latest.as_ref() {
+      Some((current_modified, _)) => modified > *current_modified,
+      None => true,
+    };
+
+    if should_replace {
+      latest = Some((modified, path));
+    }
+  }
+
+  let (_, latest_log_path) = latest.ok_or_else(|| {
+    "No screen behavior logs found yet. Run `watch screen behavior` first and wait for completion.".to_string()
+  })?;
+
+  let content = fs::read_to_string(&latest_log_path)
+    .map_err(|error| format!("Cannot read behavior run log {}: {error}", latest_log_path.to_string_lossy()))?;
+
+  let mut result_json = None;
+  for line in content.lines().rev() {
+    if let Some((_, value)) = line.split_once("BEHAVIOR_RESULT_JSON=") {
+      result_json = Some(value.trim().to_string());
+      break;
+    }
+    let trimmed = line.trim();
+    if trimmed.starts_with('{') && trimmed.contains("\"dominant_behavior\"") {
+      result_json = Some(trimmed.to_string());
+      break;
+    }
+  }
+
+  let result_json = result_json.ok_or_else(|| {
+    "Latest behavior run log does not contain BEHAVIOR_RESULT_JSON yet. Wait for script to finish and retry."
+      .to_string()
+  })?;
+
+  let parsed: serde_json::Value = serde_json::from_str(&result_json)
+    .map_err(|error| format!("Failed to parse behavior report JSON from run log: {error}"))?;
+
+  let dominant_behavior = parsed
+    .get("dominant_behavior")
+    .and_then(|value| value.as_str())
+    .unwrap_or("unknown");
+  let dominant_process = parsed
+    .get("dominant_process")
+    .and_then(|value| value.as_str())
+    .unwrap_or("");
+  let dominant_window = parsed
+    .get("dominant_window_title")
+    .and_then(|value| value.as_str())
+    .unwrap_or("");
+  let samples_collected = parsed
+    .get("samples_collected")
+    .and_then(|value| value.as_u64())
+    .unwrap_or(0);
+  let motion_index = parsed
+    .get("motion_index")
+    .and_then(|value| value.as_f64())
+    .unwrap_or(0.0);
+  let cursor_distance = parsed
+    .get("cursor_distance")
+    .and_then(|value| value.as_f64())
+    .unwrap_or(0.0);
+
+  let mut details = vec![
+    format!("source={target}"),
+    format!("run_log={}", latest_log_path.to_string_lossy()),
+    format!("dominant_behavior={dominant_behavior}"),
+    format!("samples_collected={samples_collected}"),
+    format!("motion_index={motion_index:.4}"),
+    format!("cursor_distance={cursor_distance:.1}"),
+  ];
+
+  if !dominant_process.trim().is_empty() {
+    details.push(format!("dominant_process={dominant_process}"));
+  }
+  if !dominant_window.trim().is_empty() {
+    details.push(format!("dominant_window_title={}", truncate_error_text(dominant_window, 160)));
+  }
+
+  if let Some(commands) = parsed
+    .get("suggested_commands")
+    .and_then(|value| value.as_array())
+    .map(|items| {
+      items
+        .iter()
+        .filter_map(|item| item.as_str())
+        .take(4)
+        .collect::<Vec<_>>()
+    })
+    .filter(|items| !items.is_empty())
+  {
+    details.push(format!("suggested_commands={}", commands.join(" | ")));
+  }
+
+  let summary = if dominant_behavior == "unknown" {
+    format!("{label}: no clear dominant behavior yet.")
+  } else {
+    format!(
+      "{label}: {dominant_behavior} (process: {}, samples: {samples_collected}).",
+      if dominant_process.is_empty() {
+        "unknown"
+      } else {
+        dominant_process
+      }
+    )
+  };
+
+  Ok((summary, details))
+}
+
 fn try_spawn_any(candidates: &[&str]) -> bool {
   candidates
     .iter()
@@ -2665,6 +3614,19 @@ fn parse_coordinate_pair(raw: &str) -> Option<(i32, i32)> {
     return None;
   }
   Some((numbers[0], numbers[1]))
+}
+
+fn parse_coordinate_quad(raw: &str) -> Option<(i32, i32, i32, i32)> {
+  let numbers = raw
+    .split(|ch: char| !ch.is_ascii_digit() && ch != '-')
+    .filter(|token| !token.is_empty())
+    .filter_map(|token| token.parse::<i32>().ok())
+    .take(4)
+    .collect::<Vec<_>>();
+  if numbers.len() < 4 {
+    return None;
+  }
+  Some((numbers[0], numbers[1], numbers[2], numbers[3]))
 }
 
 fn normalize_site_target(raw_target: &str) -> (String, String) {
@@ -2911,6 +3873,11 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "Run `screen intent` first so a fresh report log is generated.".into(),
       "Wait for `screen_intent_watch.py` to finish and write INTENT_RESULT_JSON.".into(),
       "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_intent_watch log.".into(),
+    ],
+    "read_behavior_report" => vec![
+      "Run `watch screen behavior` first so a fresh behavior log is generated.".into(),
+      "Wait for `screen_behavior_watch.py` to finish and write BEHAVIOR_RESULT_JSON.".into(),
+      "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_behavior_watch log.".into(),
     ],
     _ => vec!["Retry later or use a simpler supported command phrase.".into()],
   }
@@ -3246,6 +4213,45 @@ mod tests {
   }
 
   #[test]
+  fn plans_screen_behavior_request_with_default_payload() {
+    let plan = plan_user_request("watch screen behavior".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "medium-risk");
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "screen_behavior_watch.py");
+    assert_eq!(
+      payload.input,
+      Some("goal=workflow duration=16 interval=1.0 samples=10".to_string())
+    );
+  }
+
+  #[test]
+  fn plans_latest_screen_behavior_report_request() {
+    let plan = plan_user_request("latest screen behavior".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_behavior_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("screen_behavior_watch")
+    );
+  }
+
+  #[test]
   fn plans_latest_screen_intent_report_request() {
     let plan = plan_user_request("latest screen intent".to_string());
     assert!(plan.can_execute_directly);
@@ -3261,6 +4267,28 @@ mod tests {
         .map(|action| action.target.as_str()),
       Some("screen_intent_watch")
     );
+  }
+
+  #[test]
+  fn plans_human_move_request_with_coordinates() {
+    let plan = plan_user_request("human move 1000,620".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "human_input_ops.py");
+    assert_eq!(payload.input, Some("move:1000,620".to_string()));
   }
 
   #[test]

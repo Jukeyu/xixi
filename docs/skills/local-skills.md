@@ -25,8 +25,13 @@ run skill open_tradingview
 run skill search_stock_news tsla
 run skill screen_watch_ocr keyword=stock duration=20
 run skill screen_intent_watch goal=trading duration=16 samples=6
+run skill screen_behavior_watch goal=workflow duration=16 samples=10
 run skill desktop_action_safe click
 run skill desktop_skill_ops rightclick
+run skill human_input_ops move:980,540
+run skill human_input_ops click:980,540
+run skill human_input_ops drag:780,420>1120,640
+run skill human_input_ops type:hello from xixi
 ```
 
 ## JSON Schema (Current)
@@ -67,6 +72,8 @@ run skill desktop_skill_ops rightclick
 - Built-in templates created automatically:
   - `screen_watch_ocr.py`
   - `screen_intent_watch.py`
+  - `screen_behavior_watch.py`
+  - `human_input_ops.py`
   - `safe_desktop_action.py`
 
 Example (screen watch):
@@ -116,6 +123,20 @@ Example:
 run skill screen_intent_watch goal=coding duration=18 interval=1.2 samples=8
 ```
 
+`screen_behavior_watch.py` option keys:
+
+- `goal`: optional behavior hint (workflow/research/trading/etc.)
+- `duration`: total observation seconds
+- `interval`: seconds between each sample
+- `samples`: max sample count
+- `screen`: `1|0` (whether to use screen-diff signal)
+
+Example:
+
+```text
+run skill screen_behavior_watch goal=workflow duration=16 interval=1.0 samples=10
+```
+
 Example (desktop action):
 
 ```text
@@ -126,6 +147,12 @@ run skill desktop_action_safe hotkey:ctrl,s
 run skill desktop_skill_ops rightclick
 run skill desktop_skill_ops scroll:-400
 run skill desktop_skill_ops wait:1.2
+run skill human_input_ops move:980,540
+run skill human_input_ops click:980,540
+run skill human_input_ops doubleclick:980,540
+run skill human_input_ops drag:780,420>1120,640
+run skill human_input_ops type:hello from xixi
+run skill human_input_ops hotkey:ctrl,s
 ```
 
 `desktop_action_safe` blocks a small set of dangerous combinations by default and logs every run.
@@ -145,6 +172,12 @@ watch screen stock
 screen intent coding
 watch intent trading
 latest screen intent
+watch screen behavior workflow
+latest screen behavior
+human move 980,540
+human click 980,540
+human drag 780,420 to 1120,640
+human type hello from xixi
 move mouse 960,540
 right click
 scroll down 400
@@ -152,13 +185,13 @@ scroll down 400
 
 ## Python Dependencies
 
-For `screen_watch_ocr.py` and `screen_intent_watch.py`:
+For `screen_watch_ocr.py`, `screen_intent_watch.py`, and `screen_behavior_watch.py`:
 
 ```text
 pip install mss pillow pytesseract
 ```
 
-For `desktop_action_safe.py`:
+For `desktop_action_safe.py` and `human_input_ops.py`:
 
 ```text
 pip install pyautogui
@@ -166,6 +199,7 @@ pip install pyautogui
 
 If a dependency is missing, the script exits and writes guidance to run logs.
 `screen_intent_watch.py` will automatically fallback to active-window-only mode if OCR dependencies are missing.
+`screen_behavior_watch.py` will fallback to cursor+window-only mode if screen-diff dependencies are missing.
 
 ## Reusing Skills from Internet
 
