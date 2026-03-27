@@ -219,6 +219,14 @@ fn chat_with_model_api(request: ModelApiChatRequest) -> Result<ModelApiChatRespo
     .map_err(|error| format!("Failed to read model API response: {error}"))?;
 
   if !status.is_success() {
+    if looks_like_html_response(&response_text) {
+      let html_title = extract_html_title(&response_text).unwrap_or_else(|| "HTML upstream error".into());
+      return Err(format!(
+        "Model API request failed: HTTP {} ({html_title}). Upstream returned HTML instead of JSON. Endpoint used: {endpoint}. Check base URL/model/key/network. OpenAI-compatible example base URL: https://api.openai.com/v1",
+        status.as_u16(),
+      ));
+    }
+
     return Err(format!(
       "Model API request failed: HTTP {} {}",
       status.as_u16(),
@@ -2388,6 +2396,14 @@ fn build_chat_completions_endpoint(base_url: &str) -> String {
   if normalized.ends_with("/chat/completions") {
     return normalized.to_string();
   }
+  if normalized.eq_ignore_ascii_case("https://api.openai.com")
+    || normalized.eq_ignore_ascii_case("http://api.openai.com")
+  {
+    return format!("{normalized}/v1/chat/completions");
+  }
+  if normalized.ends_with("/v1") {
+    return format!("{normalized}/chat/completions");
+  }
   format!("{normalized}/chat/completions")
 }
 
@@ -2438,6 +2454,23 @@ fn truncate_error_text(text: &str, max_len: usize) -> String {
   }
 
   format!("{}...", &text[..max_len])
+}
+
+fn looks_like_html_response(text: &str) -> bool {
+  let lowered = text.trim_start().to_lowercase();
+  lowered.starts_with("<!doctype html")
+    || lowered.starts_with("<html")
+    || (lowered.contains("<html") && lowered.contains("</html>"))
+}
+
+fn extract_html_title(html_text: &str) -> Option<String> {
+  let lowered = html_text.to_lowercase();
+  let start = lowered.find("<title>")?;
+  let end = lowered.find("</title>")?;
+  if end <= start + 7 {
+    return None;
+  }
+  Some(html_text[start + 7..end].trim().to_string())
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
@@ -3177,9 +3210,20 @@ mod tests {
       "https://api.openai.com/v1/chat/completions"
     );
     assert_eq!(
+      build_chat_completions_endpoint("https://api.openai.com"),
+      "https://api.openai.com/v1/chat/completions"
+    );
+    assert_eq!(
       build_chat_completions_endpoint("https://example.com/v1/chat/completions"),
       "https://example.com/v1/chat/completions"
     );
+  }
+
+  #[test]
+  fn detects_html_upstream_error_shape() {
+    let html = "<html><head><title>400 Bad Request</title></head><body>bad</body></html>";
+    assert!(looks_like_html_response(html));
+    assert_eq!(extract_html_title(html), Some("400 Bad Request".to_string()));
   }
 
   #[test]
