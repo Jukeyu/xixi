@@ -45,3 +45,15 @@ High-value contribution themes:
 - List exact commands used for verification.
 - Include screenshots for UI changes.
 - Mention any known limits or follow-up work.
+
+## README Update Rule (Required)
+
+For this project, each meaningful push should update the GitHub introduction page (`README.md`) together with code changes.
+
+Before opening a PR, verify:
+
+1. README "current status" matches what is actually runnable.
+2. New capabilities are reflected with user-facing command examples.
+3. Unimplemented ideas are not described as finished features.
+4. Dependency/setup changes are documented.
+5. Safety boundaries and known limits remain explicit.
