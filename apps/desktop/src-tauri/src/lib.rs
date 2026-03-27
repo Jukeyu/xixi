@@ -1699,10 +1699,10 @@ def main():
             import PIL  # noqa: F401
             import pytesseract  # noqa: F401
         except Exception as error:
-            log("missing dependency. install with:")
-            log("pip install mss pillow pytesseract")
+            log("OCR dependency missing, fallback to active-window-only intent mode.")
+            log("install OCR dependencies with: pip install mss pillow pytesseract")
             log(f"import error: {error}")
-            raise SystemExit(1)
+            use_ocr = False
 
     intent_counter = Counter()
     window_counter = Counter()

@@ -164,6 +164,7 @@ pip install pyautogui
 ```
 
 If a dependency is missing, the script exits and writes guidance to run logs.
+`screen_intent_watch.py` will automatically fallback to active-window-only mode if OCR dependencies are missing.
 
 ## Reusing Skills from Internet
 
