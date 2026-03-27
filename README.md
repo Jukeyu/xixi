@@ -38,6 +38,9 @@
   - `screen_intent_watch.py`
   - `screen_behavior_watch.py`
   - `latest screen summary`（融合意图+行为报告）
+- 远程聊天桥接雏形（手机消息 -> 本机命令队列 -> xixi 执行）：
+  - Feishu 事件回调接入脚本（本地网关）
+  - xixi 内置桥接队列轮询执行
 - 页面技能（Page-Agent 风格）：
   - `page agent inspect <url>`
   - `page agent click <url> <text>`
@@ -115,6 +118,34 @@ human type hello from xixi
 更多说明见：
 - `docs/skills/local-skills.md`
 - `docs/skills/github-research-notes-2026-03-27.md`
+- `docs/integrations/chat-platform-bridge.md`
+
+## 远程聊天桥接（Feishu/WeCom/WeChat 方向）
+
+当前已落地第一版本地桥接链路：
+
+1. 聊天平台回调进入本地网关脚本（先实现 Feishu 事件回调）。
+2. 网关把远程命令写入 `%LOCALAPPDATA%\xixi\bridge\inbox.jsonl`。
+3. xixi 桌面端轮询该队列并按现有风险策略执行。
+
+启动网关：
+
+```bash
+python scripts/xixi_chat_bridge.py --host 0.0.0.0 --port 17770
+```
+
+手工注入测试（模拟聊天平台）：
+
+```bash
+curl -X POST http://127.0.0.1:17770/ingest \
+  -H "Content-Type: application/json" \
+  -d "{\"source\":\"manual\",\"text\":\"/xixi open app calculator\"}"
+```
+
+说明：
+- 远程消息默认要求以 `xixi` 或 `/xixi` 开头。
+- 在 xixi 设置里开启 `Enable remote chat bridge polling` 后会自动消费并执行。
+- WeCom / WeChat 专用回调适配器正在推进，当前先通过通用 `/ingest` 桥接点接入。
 
 ## 依赖说明（Python）
 
@@ -170,6 +201,7 @@ python -m playwright install chromium
 
 - `apps/desktop`：Tauri + React 桌面应用
 - `docs/skills`：技能文档与研究参考
+- `docs/integrations`：外部平台接入与桥接文档
 - `ARCHITECTURE.md`：架构说明
 - `ROADMAP.md`：路线图
 - `CONTRIBUTING.md`：贡献规范

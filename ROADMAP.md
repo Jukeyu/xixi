@@ -38,6 +38,9 @@
 - [ ] Skill execution observability panel
 - [ ] Contributor templates for new skills
 - [ ] Safe autonomous desktop task chains for non-technical users
+- [x] Remote chat bridge queue + Feishu callback gateway (v1)
+- [ ] WeCom callback adapter (official enterprise API path)
+- [ ] WeChat-side relay adapter (official platform scope only)
 
 ## Phase 5 - Community and Release
 

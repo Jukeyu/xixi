@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import './App.css'
@@ -89,6 +89,13 @@ type ModelChatApiResponse = {
   latency_ms: number
 }
 
+type BridgeRemoteCommand = {
+  id: string
+  source: string
+  text: string
+  received_at_ms: number
+}
+
 type PendingAction = {
   request: string
   riskLevel: string
@@ -121,6 +128,8 @@ type SettingsState = {
   weatherLocationName: string
   weatherLatitude: number
   weatherLongitude: number
+  remoteBridgeEnabled: boolean
+  remoteBridgePollSeconds: number
 }
 
 type WeatherState = {
@@ -158,6 +167,8 @@ const defaultSettings: SettingsState = {
   weatherLocationName: 'Taipei',
   weatherLatitude: 25.033,
   weatherLongitude: 121.5654,
+  remoteBridgeEnabled: false,
+  remoteBridgePollSeconds: 6,
 }
 
 const initialMessages: ChatMessage[] = [
@@ -444,7 +455,10 @@ function App() {
   const [petPose, setPetPose] = useState<PetPose>('sit')
   const [localSkills, setLocalSkills] = useState<LocalSkillSummary[]>([])
   const [skillsFolderPath, setSkillsFolderPath] = useState('')
+  const [bridgeFolderPath, setBridgeFolderPath] = useState('')
   const [weatherReloadTick, setWeatherReloadTick] = useState(0)
+  const isBusyRef = useRef(false)
+  const runRequestRef = useRef<((request: string) => Promise<void>) | null>(null)
 
   const windowApi = useMemo(() => (isDesktop ? getCurrentWindow() : null), [isDesktop])
   const hasModelApiConfigured = useMemo(
@@ -481,6 +495,10 @@ function App() {
     invoke<string>('get_skills_folder_path')
       .then((path) => setSkillsFolderPath(path))
       .catch(() => setSkillsFolderPath(''))
+
+    invoke<string>('get_bridge_folder_path')
+      .then((path) => setBridgeFolderPath(path))
+      .catch(() => setBridgeFolderPath(''))
   }, [isDesktop])
 
   useEffect(() => {
@@ -519,6 +537,10 @@ function App() {
       JSON.stringify(actionLogs.slice(0, MAX_ACTION_LOGS))
     )
   }, [actionLogs])
+
+  useEffect(() => {
+    isBusyRef.current = isBusy
+  }, [isBusy])
 
   useEffect(() => {
     let cancelled = false
@@ -869,6 +891,59 @@ function App() {
       setIsBusy(false)
     }
   }
+
+  runRequestRef.current = runRequest
+
+  useEffect(() => {
+    if (!isDesktop || !settings.remoteBridgeEnabled || settings.chatMode !== 'command') {
+      return
+    }
+
+    let cancelled = false
+    const pollEverySec = Math.max(2, Math.min(30, Math.round(settings.remoteBridgePollSeconds)))
+
+    const pollRemoteBridge = async () => {
+      if (cancelled || isBusyRef.current) {
+        return
+      }
+      try {
+        const commands = await invoke<BridgeRemoteCommand[]>('bridge_pull_remote_commands', {
+          limit: 1,
+        })
+        if (!commands || commands.length === 0) {
+          return
+        }
+
+        const command = commands[0]
+        appendAssistantMessage(
+          `Remote command received from ${command.source}: ${command.text}`,
+          `remote-id=${command.id} | ${new Date(command.received_at_ms).toLocaleString()}`
+        )
+        if (runRequestRef.current) {
+          await runRequestRef.current(command.text)
+        }
+      } catch (error) {
+        const detail =
+          error instanceof Error ? error.message : 'Unknown remote bridge polling error'
+        appendAssistantMessage('Remote bridge polling failed.', detail)
+      }
+    }
+
+    void pollRemoteBridge()
+    const timer = window.setInterval(() => {
+      void pollRemoteBridge()
+    }, pollEverySec * 1000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [
+    isDesktop,
+    settings.remoteBridgeEnabled,
+    settings.remoteBridgePollSeconds,
+    settings.chatMode,
+  ])
 
   const retryLastFailedAction = async () => {
     if (!lastFailedAction || isBusy) {
@@ -1574,6 +1649,45 @@ function App() {
                 }
               />
               <span>Auto-run supported commands</span>
+            </label>
+
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.remoteBridgeEnabled}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    remoteBridgeEnabled: event.target.checked,
+                  }))
+                }
+              />
+              <span>Enable remote chat bridge polling</span>
+            </label>
+
+            <label className="settings-row">
+              <span>Remote poll interval (seconds)</span>
+              <input
+                type="number"
+                min="2"
+                max="30"
+                step="1"
+                value={settings.remoteBridgePollSeconds}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    remoteBridgePollSeconds: Math.max(
+                      2,
+                      Math.min(30, Number(event.target.value) || 6)
+                    ),
+                  }))
+                }
+              />
+            </label>
+
+            <label className="settings-row">
+              <span>Remote bridge folder</span>
+              <input type="text" value={bridgeFolderPath} readOnly />
             </label>
 
             <label className="settings-row">

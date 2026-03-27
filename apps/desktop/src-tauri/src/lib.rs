@@ -87,6 +87,14 @@ struct ActionExecutionResult {
   recovery_tips: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct BridgeRemoteCommand {
+  id: String,
+  source: String,
+  text: String,
+  received_at_ms: u64,
+}
+
 #[derive(Deserialize)]
 struct ModelApiChatRequest {
   base_url: String,
@@ -150,6 +158,50 @@ fn list_local_skills() -> Vec<LocalSkillSummary> {
 #[tauri::command]
 fn get_skills_folder_path() -> String {
   skills_dir_path().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+fn get_bridge_folder_path() -> String {
+  bridge_dir_path().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+fn bridge_pull_remote_commands(limit: Option<u32>) -> Result<Vec<BridgeRemoteCommand>, String> {
+  ensure_bridge_dir()?;
+  let inbox_path = bridge_inbox_path();
+  if !inbox_path.exists() {
+    return Ok(Vec::new());
+  }
+
+  let content =
+    fs::read_to_string(&inbox_path).map_err(|error| format!("Failed to read bridge inbox: {error}"))?;
+  if content.trim().is_empty() {
+    return Ok(Vec::new());
+  }
+
+  let mut entries = content
+    .lines()
+    .filter_map(parse_bridge_remote_command_line)
+    .collect::<Vec<_>>();
+
+  if entries.is_empty() {
+    fs::write(&inbox_path, "").map_err(|error| format!("Failed to clean invalid bridge inbox: {error}"))?;
+    return Ok(Vec::new());
+  }
+
+  let take_count = normalize_bridge_pull_limit(limit).min(entries.len());
+  let returned = entries.drain(0..take_count).collect::<Vec<_>>();
+
+  let mut output = String::new();
+  for item in entries {
+    let line = serde_json::to_string(&item)
+      .map_err(|error| format!("Failed to serialize remaining bridge command: {error}"))?;
+    output.push_str(&line);
+    output.push('\n');
+  }
+
+  fs::write(&inbox_path, output).map_err(|error| format!("Failed to update bridge inbox: {error}"))?;
+  Ok(returned)
 }
 
 #[tauri::command]
@@ -1735,6 +1787,42 @@ fn skills_dir_path() -> PathBuf {
     return Path::new(&local_app_data).join("xixi").join("skills");
   }
   env::temp_dir().join("xixi").join("skills")
+}
+
+fn bridge_dir_path() -> PathBuf {
+  if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+    return Path::new(&local_app_data).join("xixi").join("bridge");
+  }
+  env::temp_dir().join("xixi").join("bridge")
+}
+
+fn bridge_inbox_path() -> PathBuf {
+  bridge_dir_path().join("inbox.jsonl")
+}
+
+fn ensure_bridge_dir() -> Result<(), String> {
+  let dir = bridge_dir_path();
+  fs::create_dir_all(&dir).map_err(|error| format!("Failed to create bridge folder: {error}"))?;
+  Ok(())
+}
+
+fn normalize_bridge_pull_limit(limit: Option<u32>) -> usize {
+  match limit {
+    Some(value) if value > 0 => value.min(20) as usize,
+    _ => 1,
+  }
+}
+
+fn parse_bridge_remote_command_line(line: &str) -> Option<BridgeRemoteCommand> {
+  let trimmed = line.trim();
+  if trimmed.is_empty() {
+    return None;
+  }
+  let parsed = serde_json::from_str::<BridgeRemoteCommand>(trimmed).ok()?;
+  if parsed.text.trim().is_empty() {
+    return None;
+  }
+  Some(parsed)
 }
 
 fn ensure_skills_dir() -> Result<(), String> {
@@ -5147,6 +5235,34 @@ mod tests {
     let content = extract_model_content(&payload).expect("content should exist");
     assert_eq!(content, "hello from model");
   }
+
+  #[test]
+  fn normalizes_bridge_pull_limit() {
+    assert_eq!(normalize_bridge_pull_limit(None), 1);
+    assert_eq!(normalize_bridge_pull_limit(Some(0)), 1);
+    assert_eq!(normalize_bridge_pull_limit(Some(1)), 1);
+    assert_eq!(normalize_bridge_pull_limit(Some(8)), 8);
+    assert_eq!(normalize_bridge_pull_limit(Some(40)), 20);
+  }
+
+  #[test]
+  fn parses_bridge_remote_command_line() {
+    let parsed = parse_bridge_remote_command_line(
+      r#"{"id":"cmd-1","source":"feishu","text":"open app calculator","received_at_ms":123}"#,
+    )
+    .expect("valid line should parse");
+    assert_eq!(parsed.id, "cmd-1");
+    assert_eq!(parsed.source, "feishu");
+    assert_eq!(parsed.text, "open app calculator");
+    assert_eq!(parsed.received_at_ms, 123);
+  }
+
+  #[test]
+  fn rejects_empty_bridge_remote_command_line() {
+    assert!(parse_bridge_remote_command_line("").is_none());
+    assert!(parse_bridge_remote_command_line(" ").is_none());
+    assert!(parse_bridge_remote_command_line(r#"{"id":"x","source":"f","text":" ","received_at_ms":1}"#).is_none());
+  }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -5164,6 +5280,9 @@ pub fn run() {
 
       if let Err(error) = ensure_skills_dir() {
         eprintln!("failed to initialize local skills folder: {error}");
+      }
+      if let Err(error) = ensure_bridge_dir() {
+        eprintln!("failed to initialize bridge folder: {error}");
       }
       if let Err(error) = ensure_pet_window(app.handle()) {
         eprintln!("failed to initialize pet window: {error}");
@@ -5228,6 +5347,8 @@ pub fn run() {
       get_desktop_profile,
       list_local_skills,
       get_skills_folder_path,
+      get_bridge_folder_path,
+      bridge_pull_remote_commands,
       chat_with_model_api,
       plan_user_request,
       execute_local_action,
