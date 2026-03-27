@@ -30,6 +30,7 @@ run skill page_agent_web mode=inspect url=https://example.com max_items=30
 run skill page_agent_web mode=click_text url=https://example.com text=More_information
 run skill desktop_action_safe click
 run skill desktop_skill_ops rightclick
+run skill desktop_skill_ops rightclick:980,540
 run skill human_input_ops move:980,540
 run skill human_input_ops click:980,540
 run skill human_input_ops drag:780,420>1120,640
@@ -140,6 +141,9 @@ Example:
 run skill screen_behavior_watch goal=workflow duration=16 interval=1.0 samples=10
 ```
 
+Use `latest screen summary` after running both `screen intent` and `watch screen behavior`.
+It merges the two latest logs into one desktop-level intent + behavior snapshot.
+
 `page_agent_web.py` option keys:
 
 - `mode`: `inspect` or `click_text`
@@ -165,6 +169,7 @@ run skill desktop_action_safe move:960,540
 run skill desktop_action_safe type:hello from xixi
 run skill desktop_action_safe hotkey:ctrl,s
 run skill desktop_skill_ops rightclick
+run skill desktop_skill_ops rightclick:980,540
 run skill desktop_skill_ops scroll:-400
 run skill desktop_skill_ops wait:1.2
 run skill human_input_ops move:980,540
@@ -194,6 +199,9 @@ watch intent trading
 latest screen intent
 watch screen behavior workflow
 latest screen behavior
+desktop status
+screen summary
+latest screen summary
 page agent inspect example.com
 page agent click example.com More information
 latest page agent
@@ -203,6 +211,7 @@ human drag 780,420 to 1120,640
 human type hello from xixi
 move mouse 960,540
 right click
+right click 960,540
 scroll down 400
 ```
 

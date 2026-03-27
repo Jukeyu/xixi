@@ -49,6 +49,7 @@ High-value contribution themes:
 ## README Update Rule (Required)
 
 For this project, each meaningful push should update the GitHub introduction page (`README.md`) together with code changes.
+Use `docs/copywriting-playbook.md` as the required checklist and style baseline.
 
 Before opening a PR, verify:
 

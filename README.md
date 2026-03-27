@@ -1,62 +1,54 @@
-# xixi · Desktop Pet Assistant（桌面宠物助手）
+# xixi | Desktop Pet Assistant
 
-`xixi` 是一个正在持续迭代的开源桌面宠物应用。  
-目标不是做“只会回复文字的聊天壳”，而是做一个可执行、可审计、可持续进化的本地助手：通过聊天命令（后续扩展语音）帮助用户在电脑上完成真实操作。
+`xixi` 是一个正在持续迭代的桌面宠物助手（Desktop Pet + Chat + Skills）。
 
-## 项目使命
+我们的目标不是做“只会聊天”的窗口，而是做一个真正可执行、可审计、可扩展的本地助手：
+- 通过聊天指令驱动桌面操作
+- 通过技能系统连接真实能力
+- 逐步走向无障碍辅助（帮助老年人和肢体不便用户更轻松使用电脑）
 
-- 让普通用户也能通过自然语言使用电脑功能，而不是被复杂界面卡住。
-- 让老年人和上肢行动不便用户，逐步拥有“低门槛、可理解、可控”的数字助手。
-- 在可用性和安全性之间做工程化平衡：只暴露真实能力，不伪造执行成功。
+## 为什么做这个项目
+
+很多人会被复杂软件界面劝退，尤其是老年用户、低视力用户、肢体不便用户。  
+`xixi` 希望把“会操作电脑”这件事，变成“会说清楚需求”这件事。
+
+长期愿景：
+- Chat-to-Action：聊天即操作
+- Voice-to-Action：后续接入语音指令
+- Skill Marketplace：社区技能共建
+- Assistive Computing：无障碍电脑助手
 
 ## 当前状态（As of 2026-03-27）
 
-这是一个可运行的桌面应用原型，核心链路已打通：
-
-- 桌面端：Tauri + React + TypeScript
-- 真实动作链路：命令规划 → 风险评估 → 本地执行 → 结果日志
-- 高风险动作默认需要人工确认
-- 支持托盘常驻、宠物窗体、多姿态显示
+这是一个可运行的桌面应用原型，已具备真实可用链路：
+- Tauri + React + TypeScript 桌面壳
+- 命令解析 -> 风险分级 -> 本地执行 -> 结构化日志
+- 支持托盘常驻、主窗体隐藏后宠物窗体显示
+- 支持模型聊天模式（OpenAI-compatible `/chat/completions`）
 - 支持本地技能扩展（JSON + Python/PowerShell）
 
-## 真实能力清单（Only Real Features）
+## 能力矩阵（已实现 vs 规划中）
 
-### 1) 桌面交互能力
+### 已实现（Real, Runnable）
+- 打开网站、搜索网页、打开应用、打开目录
+- 鼠标/键盘基础动作（点击、滚动、热键、输入）
+- 人类化输入动作（平滑移动、拖拽、节奏输入）
+- 屏幕观测技能：
+  - `screen_watch_ocr.py`
+  - `screen_intent_watch.py`
+  - `screen_behavior_watch.py`
+  - `latest screen summary`（融合意图+行为报告）
+- 页面技能（Page-Agent 风格）：
+  - `page agent inspect <url>`
+  - `page agent click <url> <text>`
+  - `latest page agent`
 
-- 打开网站、网页搜索、打开应用、打开文件夹
-- 鼠标移动/点击/双击/右键/滚动
-- 键盘输入、按键、组合键
-- 关闭主窗口后进入托盘与宠物模式
-
-### 2) 屏幕理解与意图观察能力
-
-- `screen_watch_ocr.py`：盯屏 OCR 关键词检测
-- `screen_intent_watch.py`：基于前台窗口 + OCR 的意图推断
-- `screen_behavior_watch.py`：基于鼠标轨迹 + 屏幕动态的行为态推断
-- `latest screen intent`：读取最近一次意图观察报告
-- `latest screen behavior`：读取最近一次行为观察报告
-
-### 3) 人类化输入能力
-
-- `human_input_ops.py`：平滑移动、点击、拖拽、输入节奏模拟
-- 支持命令：
-  - `human move <x,y>`
-  - `human click <x,y>`
-  - `human drag <x1,y1> to <x2,y2>`
-  - `human type <text>`
-
-### 4) Page-Agent 风格网页技能（新）
-
-- `page_agent_web.py`：本地浏览器自动化的轻量网页代理
-- `page agent inspect <url>`：读取页面可交互元素
-- `page agent click <url> <text>`：按文本尝试点击页面元素
-- `latest page agent`：读取最近一次 page-agent 执行报告
-
-### 5) 模型聊天模式
-
-- 支持 OpenAI-compatible `/chat/completions`
-- 双模式切换：命令模式 / 模型聊天模式
-- 增强错误诊断：可识别 HTML 网关错误（如 Cloudflare 400）并提示修复方向
+### 规划中（Roadmap）
+- 语音输入与语音反馈链路
+- 更强的多窗口任务拆解（Task Planning）
+- 股票观察与交易辅助技能（先模拟，再实盘，严格风险门控）
+- 社区技能目录与一键安装机制
+- 无障碍体验专项优化（字体、对比度、低学习成本流程）
 
 ## 快速开始
 
@@ -73,8 +65,7 @@ cd apps/desktop
 npm run tauri:build
 ```
 
-构建产物：
-
+Windows 构建产物：
 - `apps/desktop/src-tauri/target/release/app.exe`
 - `apps/desktop/src-tauri/target/release/bundle/msi/...`
 - `apps/desktop/src-tauri/target/release/bundle/nsis/...`
@@ -83,12 +74,10 @@ npm run tauri:build
 
 ```bash
 cd apps/desktop
-npm run check
-npm run lint
 npm run test:smoke
 ```
 
-`test:smoke` 会执行 `check + build + Rust tests`，用于保证核心能力可运行。
+`test:smoke` 会执行 TypeScript 检查、前端构建和 Rust 单元测试。
 
 ## 常用命令示例
 
@@ -97,105 +86,90 @@ open site github.com
 search web tauri tray icon
 open app vscode
 open folder downloads
-watch screen stock
+
 screen intent coding
 watch screen behavior workflow
 latest screen intent
 latest screen behavior
+latest screen summary
+
 page agent inspect example.com
 page agent click example.com More information
 latest page agent
+
 human move 960,540
-human click 960,540
+human click 920,520
 human drag 760,420 to 1080,640
 human type hello from xixi
 ```
 
 ## 本地技能系统
 
-技能目录（Windows）：
+- 技能目录：`%LOCALAPPDATA%\xixi\skills`
+- 脚本目录：`%LOCALAPPDATA%\xixi\skills\scripts`
+- 运行日志：`%LOCALAPPDATA%\xixi\skills\runs`
+- 运行命令：`run skill <skill_id> [input]`
 
-- `%LOCALAPPDATA%\xixi\skills`
-- `%LOCALAPPDATA%\xixi\skills\scripts`
-- `%LOCALAPPDATA%\xixi\skills\runs`
-
-技能命令：
-
-```text
-run skill <skill_id> [input]
-```
-
-技能文档：
-
+更多说明见：
 - `docs/skills/local-skills.md`
 - `docs/skills/github-research-notes-2026-03-27.md`
 
-## Python 依赖
+## 依赖说明（Python）
 
-### OCR / 屏幕观察
-
+OCR 与屏幕观测：
 ```bash
 pip install mss pillow pytesseract
 ```
 
-### 输入自动化
-
+桌面输入：
 ```bash
 pip install pyautogui
 ```
 
-### 网页代理技能
-
+页面自动化：
 ```bash
 pip install playwright
 python -m playwright install chromium
 ```
 
-## 安全边界（当前实现）
+## 安全边界（当前）
 
-- 仅执行白名单动作，不支持的命令会明确拒绝
-- 不提供“伪执行成功”反馈
-- `run_script` 限制在本地技能脚本目录
-- 仅允许 `.py` / `.ps1` 脚本
-- 高风险动作需要确认（UI 风险分层：Safe / Balanced / Advanced）
-- 执行结果和失败信息写入可审计日志
+- 只执行已支持命令；不支持能力会明确拒绝
+- 不做“假执行成功”反馈
+- `run_script` 只允许技能脚本目录内 `.py` / `.ps1`
+- 高风险操作需要确认（UI 风险分层）
+- 每次动作写入结构化日志，便于审计与回溯
 
-## 每次发布文案更新规范
+## 每次上传都要同步优化介绍页（必须执行）
 
-每次 push / release 同步更新 README 的介绍内容，避免“代码变了，介绍没变”：
+每次 push / release，请同步更新 README 文案，至少完成以下 6 项：
+1. 更新“当前状态”日期和能力快照
+2. 写明本次新能力的用户价值（不是只写技术实现）
+3. 区分“已实现”和“规划中”，禁止把规划写成已完成
+4. 增加至少 1 条可直接复制运行的命令示例
+5. 更新新增依赖与运行前提
+6. 若有风险边界变化，必须更新“安全边界”章节
 
-1. 更新“当前状态”日期与能力快照
-2. 增加本次新增功能的用户视角描述（不是仅写技术术语）
-3. 删除或降级任何尚未完成能力，避免误导
-4. 增加至少 1 条可直接复制运行的新命令示例
-5. 更新依赖说明（如新增脚本依赖）
-6. 若能力有边界，必须同步写出限制与风险说明
-
-建议在每次合并前执行一次：
-
-```bash
-cd apps/desktop
-npm run test:smoke
-```
-
-再检查 README 是否已反映真实可运行状态。
+执行细则见：
+- `docs/copywriting-playbook.md`
 
 ## 贡献方向（欢迎加入）
 
-- 桌面技能执行器扩展（真实操作、可回放日志）
-- 屏幕理解和意图识别准确率提升
-- 多语言命令解析（中英混合）
-- 老年友好与低视力可访问性优化
-- 语音交互链路（后续阶段）
-- 安全策略与风险控制增强
+- 桌面技能执行器与可回放日志
+- 屏幕理解与用户意图推断
+- 语音交互链路
+- 无障碍体验优化
+- 风险控制与安全策略
+
+如果你希望参与一个“能真正帮助人完成电脑操作”的开源项目，欢迎提 PR 或 Issue。
 
 ## 项目结构
 
 - `apps/desktop`：Tauri + React 桌面应用
-- `docs/skills`：技能文档与外部参考研究
-- `ARCHITECTURE.md`：系统架构
-- `ROADMAP.md`：阶段路线图
-- `CONTRIBUTING.md`：贡献与协作规范
+- `docs/skills`：技能文档与研究参考
+- `ARCHITECTURE.md`：架构说明
+- `ROADMAP.md`：路线图
+- `CONTRIBUTING.md`：贡献规范
 
 ## License
 

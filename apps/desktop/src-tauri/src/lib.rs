@@ -681,6 +681,30 @@ fn plan_user_request(request: String) -> CommandPlan {
     }
   }
 
+  if let Some(raw_right_click) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &["right click ", "right-click ", "mouse right click ", "context menu "],
+  ) {
+    if let Some((x, y)) = parse_coordinate_pair(&raw_right_click) {
+      if let Ok(action) = build_run_script_action(
+        "desktop_skill_ops.py",
+        Some(format!("rightclick:{x},{y}")),
+        "Desktop Skill Ops (right click at coordinate)",
+      ) {
+        return action_plan(
+          "I can move to that coordinate and open the context menu with right-click.",
+          "high-risk",
+          vec![
+            step("plan-rightclick-at-1", "Parse coordinates", &format!("Resolved x={x}, y={y}"), "done"),
+            step("plan-rightclick-at-2", "Build script payload", "Prepared rightclick:x,y command", "done"),
+            step("plan-rightclick-at-3", "Run local script", "Execute right-click at coordinate", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
   if let Some(raw_human_move) =
     extract_after_prefix_case_insensitive(trimmed, &["human move ", "humanized move ", "smooth move "])
   {
@@ -1192,6 +1216,40 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if lowered == "latest screen summary"
+    || lowered == "screen summary"
+    || lowered == "latest desktop summary"
+    || lowered == "desktop status"
+    || lowered == "desktop brief"
+    || lowered == "latest desktop status"
+    || lowered == "latest desktop brief"
+    || lowered == "screen brief"
+    || lowered == "what am i doing now"
+  {
+    return direct_plan(
+      "I can merge the latest screen-intent and behavior reports into one desktop summary now.",
+      vec![
+        step(
+          "plan-summary-report-1",
+          "Resolve command",
+          "Matched latest desktop summary query",
+          "done",
+        ),
+        step(
+          "plan-summary-report-2",
+          "Load latest reports",
+          "Read latest screen_intent_watch + screen_behavior_watch logs",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "read_screen_summary_report".into(),
+        target: "screen_summary".into(),
+        label: "Latest Screen Summary".into(),
+      },
+    );
+  }
+
   if let Some(raw_page_inspect) =
     extract_after_prefix_case_insensitive(trimmed, &["page agent inspect ", "page inspect "])
   {
@@ -1398,6 +1456,7 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
     "run_script" => run_script(&action.target, &action.label),
     "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
     "read_behavior_report" => read_latest_screen_behavior_report(&action.target, &action.label),
+    "read_screen_summary_report" => read_latest_screen_summary_report(&action.target, &action.label),
     "read_page_agent_report" => read_latest_page_agent_report(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
   };
@@ -3047,10 +3106,19 @@ def blocked_command(raw: str) -> bool:
     ]
     return any(lowered.startswith(item) for item in blocked)
 
+def parse_pair(text: str):
+    values = [v.strip() for v in text.split(",", 1)]
+    if len(values) != 2:
+        return None
+    try:
+        return int(values[0]), int(values[1])
+    except Exception:
+        return None
+
 def main():
     raw = sys.argv[1] if len(sys.argv) > 1 else ""
     if not raw:
-        log("usage: move:x,y | click | doubleclick | rightclick | scroll:n | type:text | press:key | hotkey:key1,key2 | wait:seconds")
+        log("usage: move:x,y | click | doubleclick | rightclick[:x,y] | scroll:n | type:text | press:key | hotkey:key1,key2 | wait:seconds")
         raise SystemExit(1)
 
     if blocked_command(raw):
@@ -3073,9 +3141,11 @@ def main():
     log(f"desktop_skill_ops received: {cmd}")
 
     if lowered.startswith("move:"):
-        values = cmd.split(":", 1)[1]
-        x_text, y_text = [v.strip() for v in values.split(",", 1)]
-        pyautogui.moveTo(int(x_text), int(y_text), duration=0.2)
+        pair = parse_pair(cmd.split(":", 1)[1].strip())
+        if not pair:
+            log("invalid move format, expected move:x,y")
+            raise SystemExit(1)
+        pyautogui.moveTo(pair[0], pair[1], duration=0.2)
         log("ok move")
         return
 
@@ -3087,6 +3157,16 @@ def main():
     if lowered == "doubleclick":
         pyautogui.doubleClick()
         log("ok doubleclick")
+        return
+
+    if lowered.startswith("rightclick:"):
+        pair = parse_pair(cmd.split(":", 1)[1].strip())
+        if not pair:
+            log("invalid rightclick format, expected rightclick:x,y")
+            raise SystemExit(1)
+        pyautogui.moveTo(pair[0], pair[1], duration=0.2)
+        pyautogui.rightClick()
+        log("ok rightclick at coordinate")
         return
 
     if lowered == "rightclick":
@@ -3757,6 +3837,63 @@ fn read_latest_screen_behavior_report(target: &str, label: &str) -> Result<(Stri
   Ok((summary, details))
 }
 
+fn extract_detail_value(details: &[String], key: &str) -> Option<String> {
+  let prefix = format!("{key}=");
+  details
+    .iter()
+    .find_map(|item| item.strip_prefix(&prefix).map(|value| value.trim().to_string()))
+    .filter(|value| !value.is_empty())
+}
+
+fn read_latest_screen_summary_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let (_, intent_details) =
+    read_latest_screen_intent_report("screen_intent_watch", "Latest Screen Intent Report")?;
+  let (_, behavior_details) =
+    read_latest_screen_behavior_report("screen_behavior_watch", "Latest Screen Behavior Report")?;
+
+  let dominant_intent =
+    extract_detail_value(&intent_details, "dominant_intent").unwrap_or_else(|| "unknown".into());
+  let dominant_behavior =
+    extract_detail_value(&behavior_details, "dominant_behavior").unwrap_or_else(|| "unknown".into());
+  let dominant_process = extract_detail_value(&intent_details, "dominant_process")
+    .or_else(|| extract_detail_value(&behavior_details, "dominant_process"))
+    .unwrap_or_else(|| "unknown".into());
+  let intent_samples = extract_detail_value(&intent_details, "samples_collected").unwrap_or_else(|| "0".into());
+  let behavior_samples =
+    extract_detail_value(&behavior_details, "samples_collected").unwrap_or_else(|| "0".into());
+  let intent_suggestions = extract_detail_value(&intent_details, "suggested_commands").unwrap_or_default();
+  let behavior_suggestions = extract_detail_value(&behavior_details, "suggested_commands").unwrap_or_default();
+
+  let mut details = vec![
+    format!("source={target}"),
+    "merged_from=screen_intent_watch+screen_behavior_watch".into(),
+    format!("dominant_intent={dominant_intent}"),
+    format!("dominant_behavior={dominant_behavior}"),
+    format!("dominant_process={dominant_process}"),
+    format!("intent_samples={intent_samples}"),
+    format!("behavior_samples={behavior_samples}"),
+  ];
+
+  if !intent_suggestions.is_empty() {
+    details.push(format!("intent_suggested_commands={intent_suggestions}"));
+  }
+  if !behavior_suggestions.is_empty() {
+    details.push(format!("behavior_suggested_commands={behavior_suggestions}"));
+  }
+  if let Some(run_log) = extract_detail_value(&intent_details, "run_log") {
+    details.push(format!("intent_run_log={run_log}"));
+  }
+  if let Some(run_log) = extract_detail_value(&behavior_details, "run_log") {
+    details.push(format!("behavior_run_log={run_log}"));
+  }
+
+  let summary = format!(
+    "{label}: intent={dominant_intent}, behavior={dominant_behavior}, process={dominant_process}."
+  );
+
+  Ok((summary, details))
+}
+
 fn read_latest_page_agent_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
   let runs_dir = skills_runs_dir();
   let entries = fs::read_dir(&runs_dir)
@@ -4311,6 +4448,12 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "Wait for `screen_behavior_watch.py` to finish and write BEHAVIOR_RESULT_JSON.".into(),
       "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_behavior_watch log.".into(),
     ],
+    "read_screen_summary_report" => vec![
+      "Run both `screen intent` and `watch screen behavior` first so fresh logs exist.".into(),
+      "Wait for both scripts to finish before requesting `latest screen summary`.".into(),
+      "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_intent_watch and screen_behavior_watch logs."
+        .into(),
+    ],
     "read_page_agent_report" => vec![
       "Run `page agent inspect <url>` first so a fresh page-agent log is generated.".into(),
       "Wait for `page_agent_web.py` to finish and write PAGE_AGENT_RESULT_JSON.".into(),
@@ -4689,6 +4832,42 @@ mod tests {
   }
 
   #[test]
+  fn plans_latest_screen_summary_report_request() {
+    let plan = plan_user_request("latest screen summary".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_screen_summary_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("screen_summary")
+    );
+  }
+
+  #[test]
+  fn plans_desktop_status_alias_to_screen_summary_report() {
+    let plan = plan_user_request("desktop status".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_screen_summary_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("screen_summary")
+    );
+  }
+
+  #[test]
   fn plans_page_agent_inspect_request() {
     let plan = plan_user_request("page agent inspect https://example.com".to_string());
     assert!(plan.can_execute_directly);
@@ -4812,6 +4991,28 @@ mod tests {
     .expect("payload should parse");
     assert_eq!(payload.script, "desktop_skill_ops.py");
     assert_eq!(payload.input, Some("rightclick".to_string()));
+  }
+
+  #[test]
+  fn plans_right_click_request_with_coordinates() {
+    let plan = plan_user_request("right click 960,540".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "desktop_skill_ops.py");
+    assert_eq!(payload.input, Some("rightclick:960,540".to_string()));
   }
 
   #[test]
