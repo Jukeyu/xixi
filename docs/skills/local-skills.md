@@ -206,6 +206,7 @@ latest screen watch
 desktop status
 screen summary
 latest screen summary
+run screen suggestion
 page agent inspect example.com
 page agent click example.com More information
 latest page agent

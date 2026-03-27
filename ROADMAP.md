@@ -37,7 +37,7 @@
 - [ ] Specialist routing interface
 - [ ] Skill execution observability panel
 - [ ] Contributor templates for new skills
-- [ ] Safe autonomous desktop task chains for non-technical users
+- [ ] Safe autonomous desktop task chains for non-technical users (v1 shipped: `run screen suggestion` single-step safe execution)
 - [x] Remote chat bridge queue + Feishu callback gateway (v1)
 - [ ] WeCom callback adapter (official enterprise API path)
 - [ ] WeChat-side relay adapter (official platform scope only)

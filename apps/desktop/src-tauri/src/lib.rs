@@ -1423,6 +1423,49 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if lowered == "run screen suggestion"
+    || lowered == "execute screen suggestion"
+    || lowered == "assistive next action"
+    || lowered == "auto next action"
+    || lowered == "run desktop suggestion"
+  {
+    return action_plan(
+      "I can read the latest desktop summary and execute one safe suggested next action.",
+      "high-risk",
+      vec![
+        step(
+          "plan-screen-suggest-1",
+          "Resolve command",
+          "Matched run-screen-suggestion command",
+          "done",
+        ),
+        step(
+          "plan-screen-suggest-2",
+          "Load latest summary",
+          "Read latest screen intent + behavior merged report",
+          "ready",
+        ),
+        step(
+          "plan-screen-suggest-3",
+          "Pick safe suggestion",
+          "Select a low-risk recommended command",
+          "ready",
+        ),
+        step(
+          "plan-screen-suggest-4",
+          "Execute selected command",
+          "Run one safe next action and return result",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "run_screen_suggestion".into(),
+        target: "screen_summary".into(),
+        label: "Run Screen Suggested Action".into(),
+      },
+    );
+  }
+
   if let Some(raw_page_inspect) =
     extract_after_prefix_case_insensitive(trimmed, &["page agent inspect ", "page inspect "])
   {
@@ -1621,19 +1664,7 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
   let started_at = now_unix_ms();
   let timer = Instant::now();
 
-  let execution = match action.kind.as_str() {
-    "open_folder" => open_folder(&action.target, &action.label),
-    "open_url" => open_url(&action.target, &action.label),
-    "search_web" => open_url(&action.target, &action.label),
-    "open_app" => open_app(&action.target, &action.label),
-    "run_script" => run_script(&action.target, &action.label),
-    "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
-    "read_behavior_report" => read_latest_screen_behavior_report(&action.target, &action.label),
-    "read_watch_report" => read_latest_screen_watch_report(&action.target, &action.label),
-    "read_screen_summary_report" => read_latest_screen_summary_report(&action.target, &action.label),
-    "read_page_agent_report" => read_latest_page_agent_report(&action.target, &action.label),
-    other => Err(format!("Unsupported action kind: {other}")),
-  };
+  let execution = dispatch_local_action(&action);
 
   let (ok, summary, mut details, recovery_tips) = match execution {
     Ok((summary, details)) => (true, summary, details, Vec::new()),
@@ -1663,6 +1694,23 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
   }
 
   result
+}
+
+fn dispatch_local_action(action: &LocalAction) -> Result<(String, Vec<String>), String> {
+  match action.kind.as_str() {
+    "open_folder" => open_folder(&action.target, &action.label),
+    "open_url" => open_url(&action.target, &action.label),
+    "search_web" => open_url(&action.target, &action.label),
+    "open_app" => open_app(&action.target, &action.label),
+    "run_script" => run_script(&action.target, &action.label),
+    "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
+    "read_behavior_report" => read_latest_screen_behavior_report(&action.target, &action.label),
+    "read_watch_report" => read_latest_screen_watch_report(&action.target, &action.label),
+    "read_screen_summary_report" => read_latest_screen_summary_report(&action.target, &action.label),
+    "read_page_agent_report" => read_latest_page_agent_report(&action.target, &action.label),
+    "run_screen_suggestion" => run_screen_suggestion(&action.target, &action.label),
+    other => Err(format!("Unsupported action kind: {other}")),
+  }
 }
 
 #[tauri::command]
@@ -4279,6 +4327,133 @@ fn read_latest_screen_summary_report(target: &str, label: &str) -> Result<(Strin
   Ok((summary, details))
 }
 
+fn is_safe_autonomous_action_kind(kind: &str) -> bool {
+  matches!(
+    kind,
+    "open_folder"
+      | "open_url"
+      | "search_web"
+      | "open_app"
+      | "read_intent_report"
+      | "read_behavior_report"
+      | "read_watch_report"
+      | "read_screen_summary_report"
+      | "read_page_agent_report"
+  )
+}
+
+fn parse_suggested_commands(value: &str) -> Vec<String> {
+  value
+    .split('|')
+    .map(|item| item.trim())
+    .filter(|item| !item.is_empty())
+    .map(|item| item.to_string())
+    .collect::<Vec<_>>()
+}
+
+fn materialize_suggestion_placeholders(raw: &str, dominant_intent: &str) -> String {
+  let mut command = raw.trim().to_string();
+  if command.is_empty() {
+    return command;
+  }
+
+  let fallback_topic = if dominant_intent.trim().is_empty() || dominant_intent == "unknown" {
+    "desktop".to_string()
+  } else {
+    dominant_intent.to_string()
+  };
+
+  let replacements = [
+    ("<topic>", fallback_topic.as_str()),
+    ("<goal>", fallback_topic.as_str()),
+    ("<keyword>", fallback_topic.as_str()),
+    ("<message keyword>", "message"),
+    ("<error keyword>", "error"),
+    ("<draft text>", "hello from xixi"),
+  ];
+
+  for (pattern, replacement) in replacements {
+    command = command.replace(pattern, replacement);
+  }
+
+  command.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn select_safe_summary_suggestion(
+  summary_details: &[String],
+  dominant_intent: &str,
+) -> Option<(String, LocalAction, String)> {
+  let mut candidates = Vec::new();
+
+  if let Some(intent_commands) = extract_detail_value(summary_details, "intent_suggested_commands") {
+    for command in parse_suggested_commands(&intent_commands) {
+      candidates.push(("intent".to_string(), command));
+    }
+  }
+  if let Some(behavior_commands) = extract_detail_value(summary_details, "behavior_suggested_commands") {
+    for command in parse_suggested_commands(&behavior_commands) {
+      candidates.push(("behavior".to_string(), command));
+    }
+  }
+
+  for (source, raw_command) in candidates {
+    let command = materialize_suggestion_placeholders(&raw_command, dominant_intent);
+    if command.trim().is_empty() {
+      continue;
+    }
+    let plan = plan_user_request(command.clone());
+    if !plan.can_execute_directly {
+      continue;
+    }
+    let Some(action) = plan.suggested_action else {
+      continue;
+    };
+    if !is_safe_autonomous_action_kind(&action.kind) {
+      continue;
+    }
+    return Some((command, action, source));
+  }
+
+  None
+}
+
+fn run_screen_suggestion(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let (summary_snapshot, summary_details) =
+    read_latest_screen_summary_report("screen_summary", "Latest Screen Summary")?;
+  let dominant_intent =
+    extract_detail_value(&summary_details, "dominant_intent").unwrap_or_else(|| "unknown".into());
+
+  let (selected_command, selected_action, selected_source) =
+    select_safe_summary_suggestion(&summary_details, &dominant_intent).ok_or_else(|| {
+      "No safe suggested command found in latest summary. Try `screen intent`, `watch screen behavior`, then `latest screen summary`."
+        .to_string()
+    })?;
+
+  let (selected_summary, selected_details) = dispatch_local_action(&selected_action)?;
+  let mut details = vec![
+    format!("source={target}"),
+    format!("summary_snapshot={}", truncate_error_text(&summary_snapshot, 220)),
+    format!("dominant_intent={dominant_intent}"),
+    format!("selected_from={selected_source}"),
+    format!("selected_command={selected_command}"),
+    format!("selected_action_kind={}", selected_action.kind),
+    format!("selected_action_label={}", selected_action.label),
+    format!(
+      "selected_action_target={}",
+      truncate_error_text(&selected_action.target, 220)
+    ),
+  ];
+  details.extend(
+    selected_details
+      .into_iter()
+      .map(|item| format!("selected_result::{item}"))
+      .collect::<Vec<_>>(),
+  );
+
+  let summary = format!("{label}: executed `{selected_command}`. {selected_summary}");
+  Ok((summary, details))
+}
+
 fn read_latest_page_agent_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
   let runs_dir = skills_runs_dir();
   let entries = fs::read_dir(&runs_dir)
@@ -4844,6 +5019,11 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_intent_watch and screen_behavior_watch logs."
         .into(),
     ],
+    "run_screen_suggestion" => vec![
+      "Run `screen intent` and `watch screen behavior` first, then `latest screen summary`.".into(),
+      "This action only auto-runs low-risk suggestions (open app/site/folder/search/report).".into(),
+      "If no safe suggestion is available, run a command manually from `latest screen summary` output.".into(),
+    ],
     "read_page_agent_report" => vec![
       "Run `page agent inspect <url>` first so a fresh page-agent log is generated.".into(),
       "Wait for `page_agent_web.py` to finish and write PAGE_AGENT_RESULT_JSON.".into(),
@@ -5237,6 +5417,43 @@ mod tests {
         .map(|action| action.target.as_str()),
       Some("screen_watch_ocr")
     );
+  }
+
+  #[test]
+  fn plans_run_screen_suggestion_request() {
+    let plan = plan_user_request("run screen suggestion".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_screen_suggestion")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("screen_summary")
+    );
+  }
+
+  #[test]
+  fn materializes_suggestion_placeholders_with_intent() {
+    let command = materialize_suggestion_placeholders("search web <topic>", "trading");
+    assert_eq!(command, "search web trading");
+  }
+
+  #[test]
+  fn selects_only_safe_suggestion_from_summary_details() {
+    let summary_details = vec![
+      "intent_suggested_commands=run skill desktop_skill_ops hotkey:ctrl,s | open app vscode".to_string(),
+    ];
+
+    let selected = select_safe_summary_suggestion(&summary_details, "coding")
+      .expect("should select safe command");
+    assert_eq!(selected.0, "open app vscode");
+    assert_eq!(selected.1.kind, "open_app");
+    assert_eq!(selected.2, "intent");
   }
 
   #[test]
