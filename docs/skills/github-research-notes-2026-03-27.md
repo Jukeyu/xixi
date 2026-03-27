@@ -4,6 +4,7 @@ This note records practical open-source options for:
 
 - screen watching (capture + OCR)
 - desktop actions (mouse/keyboard + Windows app control)
+- screen intent inference (foreground app + OCR evidence)
 
 ## Selected Building Blocks
 
@@ -31,6 +32,17 @@ This note records practical open-source options for:
    License: BSD-3-Clause  
    Decision: keep as phase-next option for stronger control of native Windows controls.
 
+5. Win32 foreground-window API references (primary source)  
+   - GetForegroundWindow: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getforegroundwindow  
+   - GetWindowTextW: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowtextw  
+   - GetWindowThreadProcessId: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowthreadprocessid  
+   - QueryFullProcessImageNameW: https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew  
+   Decision: use `ctypes` + Win32 APIs in `screen_intent_watch.py` to read active window title and process safely, without adding heavy native dependencies.
+
+6. Windows UI Automation overview (primary source)  
+   Docs: https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32  
+   Decision: keep as phase-next path for richer control-tree understanding beyond title/OCR heuristics.
+
 ## Evaluated but Not Adopted as Default
 
 1. `Open Interpreter`  
@@ -55,3 +67,4 @@ This note records practical open-source options for:
 3. Only allow `.py` and `.ps1` for now.
 4. Add explicit risk levels per skill (`medium-risk`, `high-risk`).
 5. Block known dangerous keyboard combos in default desktop action script.
+6. For screen intent, infer only coarse intent classes by default (coding/research/trading/etc.); never auto-execute high-risk actions from inference alone.

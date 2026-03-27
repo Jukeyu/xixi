@@ -808,6 +808,87 @@ fn plan_user_request(request: String) -> CommandPlan {
     }
   }
 
+  if lowered == "screen intent"
+    || lowered == "watch intent"
+    || lowered == "watch screen intent"
+    || lowered == "intent watch"
+  {
+    if let Ok(action) = build_run_script_action(
+      "screen_intent_watch.py",
+      Some("goal=desktop-workflow duration=18 interval=1.2 samples=8".to_string()),
+      "Screen Intent Watch",
+    ) {
+      return action_plan(
+        "I can run a real screen-intent observer now and summarize likely user intent.",
+        "medium-risk",
+        vec![
+          step(
+            "plan-intent-1",
+            "Match intent command",
+            "Using default intent-observation profile",
+            "done",
+          ),
+          step(
+            "plan-intent-2",
+            "Build script payload",
+            "Prepared screen_intent_watch args",
+            "done",
+          ),
+          step(
+            "plan-intent-3",
+            "Run local script",
+            "Observe active window + OCR signals",
+            "ready",
+          ),
+        ],
+        action,
+      );
+    }
+  }
+
+  if let Some(raw_intent) = extract_after_prefix_case_insensitive(
+    trimmed,
+    &["screen intent ", "watch intent ", "watch screen intent ", "intent watch "],
+  ) {
+    let goal = raw_intent
+      .split_whitespace()
+      .collect::<Vec<_>>()
+      .join("_");
+    let input = if goal.is_empty() {
+      "goal=desktop-workflow duration=18 interval=1.2 samples=8".to_string()
+    } else {
+      format!("goal={goal} duration=18 interval=1.2 samples=8")
+    };
+    if let Ok(action) = build_run_script_action("screen_intent_watch.py", Some(input), "Screen Intent Watch")
+    {
+      return action_plan(
+        "I can run a real screen-intent observer now and summarize likely user intent.",
+        "medium-risk",
+        vec![
+          step(
+            "plan-intent-1",
+            "Parse intent hint",
+            "Resolved screen intent observation hint",
+            "done",
+          ),
+          step(
+            "plan-intent-2",
+            "Build script payload",
+            "Prepared screen_intent_watch args",
+            "done",
+          ),
+          step(
+            "plan-intent-3",
+            "Run local script",
+            "Observe active window + OCR signals",
+            "ready",
+          ),
+        ],
+        action,
+      );
+    }
+  }
+
   if lowered == "watch screen" || lowered == "screen watch" {
     if let Ok(action) = build_run_script_action(
       "screen_watch_ocr.py",
@@ -1341,6 +1422,368 @@ if __name__ == '__main__':
   )?;
 
   ensure_default_script(
+    &scripts_dir.join("screen_intent_watch.py"),
+    r#"import ctypes
+import ctypes.wintypes as wintypes
+import datetime
+import json
+import os
+import sys
+import time
+from collections import Counter
+
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+INTENT_RULES = {
+    "coding": [
+        "vscode", "visual studio code", "terminal", "powershell", "cmd", "github", "gitlab",
+        "stack overflow", "traceback", "exception", "cargo", "npm", "python", "rust", "commit", "pull request",
+    ],
+    "writing": [
+        "notion", "word", "docs", "document", "report", "proposal", "draft", "markdown", "slides",
+    ],
+    "research": [
+        "search", "bing", "google", "wiki", "article", "documentation", "tutorial", "readme",
+    ],
+    "communication": [
+        "slack", "discord", "telegram", "mail", "gmail", "outlook", "message", "chat", "teams",
+    ],
+    "meeting": [
+        "zoom", "google meet", "meet", "webex", "meeting", "calendar invite",
+    ],
+    "trading": [
+        "tradingview", "stock", "crypto", "chart", "portfolio", "order", "buy", "sell", "broker",
+    ],
+    "media": [
+        "spotify", "youtube", "music", "movie", "video", "netflix",
+    ],
+    "file_management": [
+        "explorer", "folder", "file", "downloads", "desktop", "documents",
+    ],
+}
+
+INTENT_TO_SUGGESTIONS = {
+    "coding": [
+        "open app vscode",
+        "search web <error keyword>",
+        "run skill desktop_skill_ops hotkey:ctrl,s",
+    ],
+    "writing": [
+        "open app notepad",
+        "type <draft text>",
+    ],
+    "research": [
+        "search web <topic>",
+        "watch screen <keyword>",
+    ],
+    "communication": [
+        "open app edge",
+        "watch screen <message keyword>",
+    ],
+    "meeting": [
+        "open site meet.google.com",
+        "open app edge",
+    ],
+    "trading": [
+        "run skill open_tradingview",
+        "watch screen stock",
+    ],
+    "media": [
+        "open app spotify",
+        "open music player",
+    ],
+    "file_management": [
+        "open folder downloads",
+        "open xixi folder",
+    ],
+}
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def parse_options(raw: str):
+    defaults = {
+        "goal": "desktop-workflow",
+        "duration": "18",
+        "interval": "1.2",
+        "samples": "8",
+        "max_chars": "1600",
+        "ocr": "1",
+        "region": "",
+    }
+    text = (raw or "").strip()
+    if not text:
+        return defaults
+
+    parts = [p.strip() for p in text.split() if p.strip()]
+    if parts and "=" not in parts[0]:
+        defaults["goal"] = parts[0]
+
+    for part in parts:
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key in defaults and value:
+            defaults[key] = value
+    return defaults
+
+def parse_region(region_text: str):
+    if not region_text:
+        return None
+    values = [v.strip() for v in region_text.split(",")]
+    if len(values) != 4:
+        return None
+    try:
+        left, top, width, height = [int(v) for v in values]
+        if width <= 0 or height <= 0:
+            return None
+        return {"left": left, "top": top, "width": width, "height": height}
+    except Exception:
+        return None
+
+def normalize_text(text: str, max_chars: int):
+    compact = " ".join((text or "").split())
+    return compact[:max_chars]
+
+def parse_float(value: str, default: float, min_v: float, max_v: float):
+    try:
+        parsed = float(value)
+    except Exception:
+        return default
+    return max(min_v, min(max_v, parsed))
+
+def parse_int(value: str, default: int, min_v: int, max_v: int):
+    try:
+        parsed = int(value)
+    except Exception:
+        return default
+    return max(min_v, min(max_v, parsed))
+
+def parse_bool(value: str):
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+def resolve_process_name(pid: int):
+    if not pid:
+        return ""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ""
+        try:
+            size = wintypes.DWORD(1024)
+            buffer = ctypes.create_unicode_buffer(size.value)
+            ok = kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size))
+            if not ok:
+                return ""
+            return os.path.basename(buffer.value).lower()
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return ""
+
+def foreground_window_info():
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return {"title": "", "process": "", "pid": 0}
+
+        length = user32.GetWindowTextLengthW(hwnd)
+        length = max(0, min(length, 2048))
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, len(buffer))
+        title = buffer.value.strip()
+
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        process_name = resolve_process_name(pid.value)
+        return {"title": title, "process": process_name, "pid": int(pid.value)}
+    except Exception:
+        return {"title": "", "process": "", "pid": 0}
+
+def capture_ocr_text(region, max_chars: int):
+    try:
+        import mss
+        from PIL import Image
+        import pytesseract
+    except Exception as error:
+        return "", str(error)
+
+    with mss.mss() as sct:
+        monitor = region or sct.monitors[1]
+        shot = sct.grab(monitor)
+        image = Image.frombytes("RGB", shot.size, shot.rgb)
+        text = pytesseract.image_to_string(image, config="--psm 6")
+        return normalize_text(text, max_chars), ""
+
+def infer_intents(window_title: str, process_name: str, ocr_text: str, goal_hint: str):
+    combined = " ".join([window_title, process_name, ocr_text]).lower()
+    goal_hint = (goal_hint or "").replace("_", " ").strip().lower()
+    goal_tokens = [token for token in goal_hint.split() if len(token) >= 3]
+    intents = []
+
+    for label, keywords in INTENT_RULES.items():
+        hits = [keyword for keyword in keywords if keyword in combined]
+        if not hits:
+            continue
+        confidence = min(0.95, 0.32 + 0.1 * len(hits))
+        if goal_tokens and any(token in combined for token in goal_tokens):
+            confidence = min(0.97, confidence + 0.06)
+        intents.append(
+            {
+                "label": label,
+                "confidence": round(confidence, 2),
+                "evidence": hits[:6],
+            }
+        )
+
+    intents.sort(key=lambda item: item["confidence"], reverse=True)
+    if intents:
+        return intents
+
+    return [
+        {
+            "label": "unknown",
+            "confidence": 0.22,
+            "evidence": ["insufficient_keywords"],
+        }
+    ]
+
+def build_suggestions(dominant_intent: str):
+    return INTENT_TO_SUGGESTIONS.get(
+        dominant_intent,
+        [
+            "watch screen <keyword>",
+            "search web <goal>",
+        ],
+    )
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    opts = parse_options(raw)
+    goal = opts["goal"]
+    duration = parse_float(opts["duration"], default=18.0, min_v=4.0, max_v=120.0)
+    interval = parse_float(opts["interval"], default=1.2, min_v=0.4, max_v=10.0)
+    samples = parse_int(opts["samples"], default=8, min_v=1, max_v=80)
+    max_chars = parse_int(opts["max_chars"], default=1600, min_v=200, max_v=6000)
+    use_ocr = parse_bool(opts["ocr"])
+    region = parse_region(opts["region"])
+
+    max_by_duration = max(1, int(duration / interval))
+    total_samples = min(samples, max_by_duration)
+
+    log(
+        f"screen_intent_watch start goal={goal} duration={duration}s interval={interval}s "
+        f"samples={total_samples} ocr={use_ocr} region={region or 'full-screen'}"
+    )
+
+    if use_ocr:
+        try:
+            import mss  # noqa: F401
+            import PIL  # noqa: F401
+            import pytesseract  # noqa: F401
+        except Exception as error:
+            log("missing dependency. install with:")
+            log("pip install mss pillow pytesseract")
+            log(f"import error: {error}")
+            raise SystemExit(1)
+
+    intent_counter = Counter()
+    window_counter = Counter()
+    process_counter = Counter()
+    sample_rows = []
+    ocr_errors = []
+
+    started_at = time.time()
+    for index in range(total_samples):
+        window_info = foreground_window_info()
+        window_title = window_info.get("title", "")
+        process_name = window_info.get("process", "")
+        pid = window_info.get("pid", 0)
+
+        ocr_text = ""
+        if use_ocr:
+            ocr_text, ocr_error = capture_ocr_text(region, max_chars=max_chars)
+            if ocr_error:
+                ocr_errors.append(ocr_error)
+
+        intents = infer_intents(window_title, process_name, ocr_text, goal)
+        top_intent = intents[0]["label"]
+        intent_counter[top_intent] += 1
+        if window_title:
+            window_counter[window_title] += 1
+        if process_name:
+            process_counter[process_name] += 1
+
+        sample_rows.append(
+            {
+                "index": index + 1,
+                "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+                "window_title": window_title,
+                "process": process_name,
+                "pid": pid,
+                "top_intent": top_intent,
+                "intent_candidates": intents[:3],
+                "ocr_preview": ocr_text[:200],
+            }
+        )
+
+        confidence = intents[0]["confidence"]
+        log(
+            f"sample {index + 1}/{total_samples} process={process_name or '-'} "
+            f"title={window_title[:60] or '-'} top_intent={top_intent} confidence={confidence}"
+        )
+
+        if index < total_samples - 1:
+            elapsed = time.time() - started_at
+            if elapsed + interval > duration:
+                break
+            time.sleep(interval)
+
+    dominant_intent = intent_counter.most_common(1)[0][0] if intent_counter else "unknown"
+    dominant_window = window_counter.most_common(1)[0][0] if window_counter else ""
+    dominant_process = process_counter.most_common(1)[0][0] if process_counter else ""
+    suggestions = build_suggestions(dominant_intent)
+
+    result = {
+        "goal_hint": goal,
+        "dominant_intent": dominant_intent,
+        "intent_distribution": dict(intent_counter),
+        "dominant_window_title": dominant_window,
+        "dominant_process": dominant_process,
+        "samples_collected": len(sample_rows),
+        "duration_sec": round(time.time() - started_at, 2),
+        "suggested_commands": suggestions,
+        "ocr_errors": list(dict.fromkeys(ocr_errors))[:2],
+        "samples": sample_rows,
+    }
+
+    output = json.dumps(result, ensure_ascii=False)
+    print(output, flush=True)
+    log(f"INTENT_RESULT_JSON={output}")
+
+if __name__ == "__main__":
+    main()
+"#,
+  )?;
+
+  ensure_default_script(
     &scripts_dir.join("safe_desktop_action.py"),
     r#"import datetime
 import sys
@@ -1683,6 +2126,16 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       label_template: Some("Screen Watch OCR".into()),
       risk_level: Some("medium-risk".into()),
       aliases: Some(vec!["watchocr".into(), "ocrwatch".into(), "盯屏识别".into()]),
+    },
+    LocalSkillDefinition {
+      id: "screen_intent_watch".into(),
+      name: "Screen Intent Watch".into(),
+      description: "Observe foreground window + OCR signals and infer likely user intent.".into(),
+      kind: "run_script".into(),
+      target_template: "screen_intent_watch.py".into(),
+      label_template: Some("Screen Intent Watch".into()),
+      risk_level: Some("medium-risk".into()),
+      aliases: Some(vec!["intentwatch".into(), "screenintent".into(), "watchintent".into()]),
     },
     LocalSkillDefinition {
       id: "desktop_action_safe".into(),
@@ -2550,6 +3003,52 @@ mod tests {
     assert_eq!(
       payload.input,
       Some("keyword=stock duration=20 interval=1 max_hits=2".to_string())
+    );
+  }
+
+  #[test]
+  fn plans_screen_intent_request_with_default_payload() {
+    let plan = plan_user_request("screen intent".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "medium-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "screen_intent_watch.py");
+    assert_eq!(
+      payload.input,
+      Some("goal=desktop-workflow duration=18 interval=1.2 samples=8".to_string())
+    );
+  }
+
+  #[test]
+  fn plans_screen_intent_request_with_goal_hint() {
+    let plan = plan_user_request("screen intent review code".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "medium-risk");
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "screen_intent_watch.py");
+    assert_eq!(
+      payload.input,
+      Some("goal=review_code duration=18 interval=1.2 samples=8".to_string())
     );
   }
 

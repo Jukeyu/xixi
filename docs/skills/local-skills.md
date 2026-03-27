@@ -24,6 +24,7 @@ run skill open_music_player
 run skill open_tradingview
 run skill search_stock_news tsla
 run skill screen_watch_ocr keyword=stock duration=20
+run skill screen_intent_watch goal=trading duration=16 samples=6
 run skill desktop_action_safe click
 run skill desktop_skill_ops rightclick
 ```
@@ -65,6 +66,7 @@ run skill desktop_skill_ops rightclick
 - Current allowed extensions: `.py`, `.ps1`
 - Built-in templates created automatically:
   - `screen_watch_ocr.py`
+  - `screen_intent_watch.py`
   - `safe_desktop_action.py`
 
 Example (screen watch):
@@ -98,6 +100,22 @@ xixi starts the script and passes the full input string as script arg #1.
 - `max_hits`: stop after N hits
 - `region`: optional `left,top,width,height`
 
+`screen_intent_watch.py` option keys:
+
+- `goal`: optional goal hint (for intent scoring)
+- `duration`: total observation seconds
+- `interval`: seconds between each sample
+- `samples`: max sample count
+- `max_chars`: OCR text cap per sample
+- `ocr`: `1|0` to enable or disable OCR capture
+- `region`: optional `left,top,width,height`
+
+Example:
+
+```text
+run skill screen_intent_watch goal=coding duration=18 interval=1.2 samples=8
+```
+
 Example (desktop action):
 
 ```text
@@ -124,6 +142,8 @@ type hello from xixi
 press key enter
 hotkey ctrl,s
 watch screen stock
+screen intent coding
+watch intent trading
 move mouse 960,540
 right click
 scroll down 400
@@ -131,7 +151,7 @@ scroll down 400
 
 ## Python Dependencies
 
-For `screen_watch_ocr.py`:
+For `screen_watch_ocr.py` and `screen_intent_watch.py`:
 
 ```text
 pip install mss pillow pytesseract

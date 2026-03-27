@@ -174,7 +174,7 @@ const initialMessages: ChatMessage[] = [
     role: 'assistant',
     author: 'xixi',
     content:
-      'Supported now includes parameterized commands: open site openai.com, search web tauri tray icon, open folder downloads, open app calculator.',
+      'Supported now includes parameterized commands: open site openai.com, search web tauri tray icon, open folder downloads, open app calculator, and screen intent observation.',
     meta: 'Unsupported requests stay explicit.',
   },
   {
@@ -224,6 +224,8 @@ const quickActions = [
   'Right click',
   'Scroll down 400',
   'Run skill screen_watch_ocr keyword=stock duration=15',
+  'Screen intent trading',
+  'Run skill screen_intent_watch goal=trading duration=16 samples=6',
   'Run skill desktop_action_safe click',
   'Run skill desktop_skill_ops move:800,460',
   'Type hello from xixi',
@@ -259,6 +261,8 @@ const supportedCommands = [
   'Click / Double click / Right click',
   'Scroll up|down <amount>',
   'Watch screen <keyword>',
+  'Screen intent [goal]',
+  'Watch intent [goal]',
   'Run skill <id> [input]',
   'Open skills folder',
 ]
