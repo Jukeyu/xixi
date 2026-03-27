@@ -1182,9 +1182,124 @@ fn plan_user_request(request: String) -> CommandPlan {
     }
   }
 
+  if lowered == "desktop snapshot" || lowered == "snapshot desktop" || lowered == "snapshot screen now" {
+    if let Ok(action) = build_run_script_action(
+      "desktop_snapshot.py",
+      Some("ocr=1 max_chars=1200".to_string()),
+      "Desktop Snapshot",
+    ) {
+      return action_plan(
+        "I can capture a structured desktop snapshot now.",
+        "medium-risk",
+        vec![
+          step("plan-snapshot-1", "Match command", "Using default desktop snapshot profile", "done"),
+          step(
+            "plan-snapshot-2",
+            "Build script payload",
+            "Prepared desktop_snapshot args",
+            "done",
+          ),
+          step(
+            "plan-snapshot-3",
+            "Run local script",
+            "Capture foreground window + cursor + optional OCR",
+            "ready",
+          ),
+        ],
+        action,
+      );
+    }
+  }
+
+  if let Some(raw_snapshot) =
+    extract_after_prefix_case_insensitive(trimmed, &["desktop snapshot ", "snapshot desktop "])
+  {
+    let option_text = raw_snapshot.trim();
+    if option_text.eq_ignore_ascii_case("report") {
+      return direct_plan(
+        "I can read the latest desktop snapshot report now.",
+        vec![
+          step(
+            "plan-snapshot-report-1",
+            "Resolve command",
+            "Matched latest desktop snapshot report query",
+            "done",
+          ),
+          step(
+            "plan-snapshot-report-2",
+            "Read latest run log",
+            "Load most recent desktop_snapshot log",
+            "ready",
+          ),
+        ],
+        LocalAction {
+          kind: "read_snapshot_report".into(),
+          target: "desktop_snapshot".into(),
+          label: "Latest Desktop Snapshot Report".into(),
+        },
+      );
+    }
+    let input = if option_text.is_empty() {
+      "ocr=1 max_chars=1200".to_string()
+    } else {
+      option_text.to_string()
+    };
+    if let Ok(action) = build_run_script_action("desktop_snapshot.py", Some(input), "Desktop Snapshot") {
+      return action_plan(
+        "I can capture a structured desktop snapshot now.",
+        "medium-risk",
+        vec![
+          step(
+            "plan-snapshot-1",
+            "Parse options",
+            "Resolved snapshot options for desktop capture",
+            "done",
+          ),
+          step(
+            "plan-snapshot-2",
+            "Build script payload",
+            "Prepared desktop_snapshot args",
+            "done",
+          ),
+          step(
+            "plan-snapshot-3",
+            "Run local script",
+            "Capture foreground window + cursor + optional OCR",
+            "ready",
+          ),
+        ],
+        action,
+      );
+    }
+  }
+
   if let Some(raw_watch) = extract_after_prefix_case_insensitive(trimmed, &["watch screen ", "screen watch "]) {
     let keyword = raw_watch.trim();
     let keyword_lower = keyword.to_lowercase();
+    if keyword_lower == "report" {
+      return direct_plan(
+        "I can read the latest screen-watch OCR report now.",
+        vec![
+          step(
+            "plan-watch-report-1",
+            "Resolve command",
+            "Matched latest screen-watch report query",
+            "done",
+          ),
+          step(
+            "plan-watch-report-2",
+            "Read latest run log",
+            "Load most recent screen_watch_ocr log",
+            "ready",
+          ),
+        ],
+        LocalAction {
+          kind: "read_watch_report".into(),
+          target: "screen_watch_ocr".into(),
+          label: "Latest Screen Watch Report".into(),
+        },
+      );
+    }
     if keyword_lower.starts_with("behavior") {
       let goal = keyword["behavior".len()..]
         .trim()
@@ -1389,6 +1504,63 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if lowered == "latest desktop snapshot"
+    || lowered == "desktop snapshot report"
+    || lowered == "latest snapshot"
+    || lowered == "snapshot report"
+  {
+    return direct_plan(
+      "I can read the latest desktop snapshot report now.",
+      vec![
+        step(
+          "plan-snapshot-report-1",
+          "Resolve command",
+          "Matched latest desktop snapshot report query",
+          "done",
+        ),
+        step(
+          "plan-snapshot-report-2",
+          "Read latest run log",
+          "Load most recent desktop_snapshot log",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "read_snapshot_report".into(),
+        target: "desktop_snapshot".into(),
+        label: "Latest Desktop Snapshot Report".into(),
+      },
+    );
+  }
+
+  if lowered == "latest desktop cognition"
+    || lowered == "desktop cognition report"
+    || lowered == "latest cognition report"
+  {
+    return direct_plan(
+      "I can merge the latest intent, behavior, and desktop snapshot into one cognition report now.",
+      vec![
+        step(
+          "plan-cognition-report-1",
+          "Resolve command",
+          "Matched latest desktop cognition query",
+          "done",
+        ),
+        step(
+          "plan-cognition-report-2",
+          "Load latest logs",
+          "Read latest screen_intent_watch + screen_behavior_watch + desktop_snapshot logs",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "read_desktop_cognition_report".into(),
+        target: "desktop_cognition".into(),
+        label: "Latest Desktop Cognition Report".into(),
+      },
+    );
+  }
+
   if lowered == "latest screen summary"
     || lowered == "screen summary"
     || lowered == "latest desktop summary"
@@ -1431,7 +1603,7 @@ fn plan_user_request(request: String) -> CommandPlan {
   {
     return action_plan(
       "I can read the latest desktop summary and execute one safe suggested next action.",
-      "high-risk",
+      "medium-risk",
       vec![
         step(
           "plan-screen-suggest-1",
@@ -1706,6 +1878,10 @@ fn dispatch_local_action(action: &LocalAction) -> Result<(String, Vec<String>), 
     "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
     "read_behavior_report" => read_latest_screen_behavior_report(&action.target, &action.label),
     "read_watch_report" => read_latest_screen_watch_report(&action.target, &action.label),
+    "read_snapshot_report" => read_latest_desktop_snapshot_report(&action.target, &action.label),
+    "read_desktop_cognition_report" => {
+      read_latest_desktop_cognition_report(&action.target, &action.label)
+    }
     "read_screen_summary_report" => read_latest_screen_summary_report(&action.target, &action.label),
     "read_page_agent_report" => read_latest_page_agent_report(&action.target, &action.label),
     "run_screen_suggestion" => run_screen_suggestion(&action.target, &action.label),
@@ -2017,7 +2193,8 @@ fn ensure_skills_dir() -> Result<(), String> {
 
   ensure_default_script(
     &scripts_dir.join("screen_watch_ocr.py"),
-    r#"import datetime
+    r#"# xixi-managed-script:v2
+import datetime
 import json
 import time
 import sys
@@ -2134,6 +2311,199 @@ def main():
     log(f"done scans={scans} hits={hits}")
 
 if __name__ == '__main__':
+    main()
+"#,
+  )?;
+
+  ensure_default_script(
+    &scripts_dir.join("desktop_snapshot.py"),
+    r#"# xixi-managed-script:v1
+import ctypes
+import ctypes.wintypes as wintypes
+import datetime
+import json
+import os
+import sys
+
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+class POINT(ctypes.Structure):
+    _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def parse_options(raw: str):
+    defaults = {
+        "ocr": "1",
+        "max_chars": "1200",
+        "region": "",
+        "psm": "6",
+    }
+    text = (raw or "").strip()
+    if not text:
+        return defaults
+    parts = [p.strip() for p in text.split() if p.strip()]
+    for part in parts:
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key in defaults and value:
+            defaults[key] = value
+    return defaults
+
+def parse_region(region_text: str):
+    if not region_text:
+        return None
+    values = [v.strip() for v in region_text.split(",")]
+    if len(values) != 4:
+        return None
+    try:
+        left, top, width, height = [int(v) for v in values]
+        if width <= 0 or height <= 0:
+            return None
+        return {"left": left, "top": top, "width": width, "height": height}
+    except Exception:
+        return None
+
+def parse_bool(value: str):
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+def parse_int(value: str, default: int, min_v: int, max_v: int):
+    try:
+        parsed = int(value)
+    except Exception:
+        return default
+    return max(min_v, min(max_v, parsed))
+
+def resolve_process_name(pid: int):
+    if not pid:
+        return ""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ""
+        try:
+            size = wintypes.DWORD(1024)
+            buffer = ctypes.create_unicode_buffer(size.value)
+            ok = kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size))
+            if not ok:
+                return ""
+            return os.path.basename(buffer.value).lower()
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return ""
+
+def foreground_window_info():
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return {"title": "", "process": "", "pid": 0}
+
+        length = user32.GetWindowTextLengthW(hwnd)
+        length = max(0, min(length, 2048))
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, len(buffer))
+        title = buffer.value.strip()
+
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        process_name = resolve_process_name(pid.value)
+        return {"title": title, "process": process_name, "pid": int(pid.value)}
+    except Exception:
+        return {"title": "", "process": "", "pid": 0}
+
+def get_cursor_pos():
+    pt = POINT()
+    ok = ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    if not ok:
+        return None
+    return {"x": int(pt.x), "y": int(pt.y)}
+
+def normalize_text(text: str, max_chars: int):
+    compact = " ".join((text or "").split())
+    return compact[:max_chars]
+
+def capture_ocr_text(region, max_chars: int, psm: str):
+    try:
+        import mss
+        from PIL import Image
+        import pytesseract
+    except Exception as error:
+        return "", str(error)
+
+    with mss.mss() as sct:
+        monitor = region or sct.monitors[1]
+        shot = sct.grab(monitor)
+        image = Image.frombytes("RGB", shot.size, shot.rgb)
+        text = pytesseract.image_to_string(image, config=f"--psm {psm}")
+        return normalize_text(text, max_chars), ""
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    opts = parse_options(raw)
+    use_ocr = parse_bool(opts["ocr"])
+    max_chars = parse_int(opts["max_chars"], default=1200, min_v=120, max_v=6000)
+    region = parse_region(opts["region"])
+    psm = opts["psm"] or "6"
+
+    log(
+        f"desktop_snapshot start ocr={use_ocr} max_chars={max_chars} "
+        f"region={region or 'full-screen'} psm={psm}"
+    )
+
+    window_info = foreground_window_info()
+    cursor = get_cursor_pos()
+
+    ocr_preview = ""
+    ocr_error = ""
+    ocr_ok = False
+    if use_ocr:
+        ocr_preview, ocr_error = capture_ocr_text(region, max_chars=max_chars, psm=psm)
+        ocr_ok = not bool(ocr_error)
+        if ocr_error:
+            log("OCR dependencies missing or capture failed; fallback to window+cursor snapshot.")
+            log("install with: pip install mss pillow pytesseract")
+            log(f"ocr error: {ocr_error}")
+
+    result = {
+        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+        "window_title": window_info.get("title", ""),
+        "process": window_info.get("process", ""),
+        "pid": int(window_info.get("pid", 0) or 0),
+        "cursor": cursor,
+        "ocr_enabled": bool(use_ocr),
+        "ocr_ok": bool(ocr_ok),
+        "ocr_preview": ocr_preview,
+        "region": opts["region"] or "full-screen",
+    }
+    if ocr_error:
+        result["ocr_error"] = ocr_error
+
+    output = json.dumps(result, ensure_ascii=False)
+    print(output, flush=True)
+    log(f"SNAPSHOT_RESULT_JSON={output}")
+    log("done snapshot")
+
+if __name__ == "__main__":
     main()
 "#,
   )?;
@@ -3361,7 +3731,8 @@ if __name__ == '__main__':
 
   ensure_default_script(
     &scripts_dir.join("desktop_skill_ops.py"),
-    r#"import datetime
+    r#"# xixi-managed-script:v2
+import datetime
 import sys
 import time
 
@@ -3678,6 +4049,16 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       label_template: Some("Screen Watch OCR".into()),
       risk_level: Some("medium-risk".into()),
       aliases: Some(vec!["watchocr".into(), "ocrwatch".into(), "盯屏识别".into()]),
+    },
+    LocalSkillDefinition {
+      id: "desktop_snapshot".into(),
+      name: "Desktop Snapshot".into(),
+      description: "Capture one structured desktop snapshot (window/process/cursor/optional OCR).".into(),
+      kind: "run_script".into(),
+      target_template: "desktop_snapshot.py".into(),
+      label_template: Some("Desktop Snapshot".into()),
+      risk_level: Some("medium-risk".into()),
+      aliases: Some(vec!["snapshot".into(), "desktopsnapshot".into(), "screenstate".into()]),
     },
     LocalSkillDefinition {
       id: "screen_intent_watch".into(),
@@ -4010,6 +4391,132 @@ fn read_latest_screen_watch_report(target: &str, label: &str) -> Result<(String,
   Ok((summary, details))
 }
 
+fn read_latest_desktop_snapshot_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let runs_dir = skills_runs_dir();
+  let entries = fs::read_dir(&runs_dir)
+    .map_err(|error| format!("Cannot read script runs folder {}: {error}", runs_dir.to_string_lossy()))?;
+
+  let mut latest: Option<(SystemTime, PathBuf)> = None;
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.extension().and_then(|ext| ext.to_str()) != Some("log") {
+      continue;
+    }
+    let filename = path
+      .file_name()
+      .and_then(|name| name.to_str())
+      .unwrap_or_default()
+      .to_lowercase();
+    if !filename.contains("desktop_snapshot") {
+      continue;
+    }
+    let modified = entry
+      .metadata()
+      .ok()
+      .and_then(|meta| meta.modified().ok())
+      .unwrap_or(UNIX_EPOCH);
+
+    let should_replace = match latest.as_ref() {
+      Some((current_modified, _)) => modified > *current_modified,
+      None => true,
+    };
+
+    if should_replace {
+      latest = Some((modified, path));
+    }
+  }
+
+  let (_, latest_log_path) = latest.ok_or_else(|| {
+    "No desktop snapshot logs found yet. Run `desktop snapshot` first and wait for completion.".to_string()
+  })?;
+
+  let content = fs::read_to_string(&latest_log_path).map_err(|error| {
+    format!(
+      "Cannot read desktop snapshot run log {}: {error}",
+      latest_log_path.to_string_lossy()
+    )
+  })?;
+
+  let mut result_json = None;
+  for line in content.lines().rev() {
+    if let Some((_, value)) = line.split_once("SNAPSHOT_RESULT_JSON=") {
+      result_json = Some(value.trim().to_string());
+      break;
+    }
+    let trimmed = line.trim();
+    if trimmed.starts_with('{') && trimmed.contains("\"window_title\"") && trimmed.contains("\"process\"") {
+      result_json = Some(trimmed.to_string());
+      break;
+    }
+  }
+
+  let result_json = result_json.ok_or_else(|| {
+    "Latest desktop snapshot log does not contain SNAPSHOT_RESULT_JSON yet. Wait for script to finish and retry."
+      .to_string()
+  })?;
+
+  let parsed: serde_json::Value = serde_json::from_str(&result_json)
+    .map_err(|error| format!("Failed to parse desktop snapshot JSON from run log: {error}"))?;
+
+  let window_title = parsed
+    .get("window_title")
+    .and_then(|value| value.as_str())
+    .unwrap_or("");
+  let process = parsed.get("process").and_then(|value| value.as_str()).unwrap_or("unknown");
+  let pid = parsed.get("pid").and_then(|value| value.as_u64()).unwrap_or(0);
+  let ocr_enabled = parsed
+    .get("ocr_enabled")
+    .and_then(|value| value.as_bool())
+    .unwrap_or(false);
+  let ocr_ok = parsed.get("ocr_ok").and_then(|value| value.as_bool()).unwrap_or(false);
+  let ocr_preview = parsed
+    .get("ocr_preview")
+    .and_then(|value| value.as_str())
+    .unwrap_or("");
+  let region = parsed.get("region").and_then(|value| value.as_str()).unwrap_or("full-screen");
+
+  let cursor = parsed.get("cursor");
+  let cursor_x = cursor
+    .and_then(|value| value.get("x"))
+    .and_then(|value| value.as_i64())
+    .unwrap_or(0);
+  let cursor_y = cursor
+    .and_then(|value| value.get("y"))
+    .and_then(|value| value.as_i64())
+    .unwrap_or(0);
+
+  let mut details = vec![
+    format!("source={target}"),
+    format!("run_log={}", latest_log_path.to_string_lossy()),
+    format!("process={process}"),
+    format!("pid={pid}"),
+    format!("cursor={cursor_x},{cursor_y}"),
+    format!("ocr_enabled={ocr_enabled}"),
+    format!("ocr_ok={ocr_ok}"),
+    format!("region={region}"),
+  ];
+
+  if !window_title.trim().is_empty() {
+    details.push(format!(
+      "window_title={}",
+      truncate_error_text(window_title, 180)
+    ));
+  }
+  if !ocr_preview.trim().is_empty() {
+    details.push(format!("ocr_preview={}", truncate_error_text(ocr_preview, 180)));
+  }
+  if let Some(ocr_error) = parsed.get("ocr_error").and_then(|value| value.as_str()) {
+    if !ocr_error.trim().is_empty() {
+      details.push(format!("ocr_error={}", truncate_error_text(ocr_error, 160)));
+    }
+  }
+
+  let summary = format!(
+    "{label}: process={process}, cursor=({cursor_x},{cursor_y}), ocr_ok={ocr_ok}."
+  );
+  Ok((summary, details))
+}
+
 fn read_latest_screen_intent_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
   let runs_dir = skills_runs_dir();
   let entries = fs::read_dir(&runs_dir)
@@ -4327,6 +4834,195 @@ fn read_latest_screen_summary_report(target: &str, label: &str) -> Result<(Strin
   Ok((summary, details))
 }
 
+fn build_desktop_cognition_json(
+  intent_details: Option<&[String]>,
+  behavior_details: Option<&[String]>,
+  snapshot_details: Option<&[String]>,
+  missing_sources: &[String],
+) -> serde_json::Value {
+  let dominant_intent = intent_details
+    .and_then(|details| extract_detail_value(details, "dominant_intent"))
+    .unwrap_or_else(|| "unknown".into());
+  let dominant_behavior = behavior_details
+    .and_then(|details| extract_detail_value(details, "dominant_behavior"))
+    .unwrap_or_else(|| "unknown".into());
+
+  let active_app = snapshot_details
+    .and_then(|details| extract_detail_value(details, "process"))
+    .or_else(|| intent_details.and_then(|details| extract_detail_value(details, "dominant_process")))
+    .or_else(|| behavior_details.and_then(|details| extract_detail_value(details, "dominant_process")))
+    .unwrap_or_else(|| "unknown".into());
+
+  let active_window = snapshot_details
+    .and_then(|details| extract_detail_value(details, "window_title"))
+    .or_else(|| intent_details.and_then(|details| extract_detail_value(details, "dominant_window_title")))
+    .or_else(|| behavior_details.and_then(|details| extract_detail_value(details, "dominant_window_title")))
+    .unwrap_or_else(|| "unknown".into());
+
+  let mut top_suggestions = Vec::new();
+  if let Some(raw) = intent_details.and_then(|details| extract_detail_value(details, "suggested_commands")) {
+    for command in parse_suggested_commands(&raw) {
+      if !top_suggestions.contains(&command) {
+        top_suggestions.push(command);
+      }
+      if top_suggestions.len() >= 5 {
+        break;
+      }
+    }
+  }
+  if top_suggestions.len() < 5 {
+    if let Some(raw) = behavior_details.and_then(|details| extract_detail_value(details, "suggested_commands")) {
+      for command in parse_suggested_commands(&raw) {
+        if !top_suggestions.contains(&command) {
+          top_suggestions.push(command);
+        }
+        if top_suggestions.len() >= 5 {
+          break;
+        }
+      }
+    }
+  }
+
+  let intent_samples = intent_details
+    .and_then(|details| extract_detail_value(details, "samples_collected"))
+    .and_then(|value| value.parse::<u64>().ok())
+    .unwrap_or(0);
+  let behavior_samples = behavior_details
+    .and_then(|details| extract_detail_value(details, "samples_collected"))
+    .and_then(|value| value.parse::<u64>().ok())
+    .unwrap_or(0);
+  let available_source_count = 3usize.saturating_sub(missing_sources.len().min(3));
+
+  let confidence_hint = if available_source_count == 3 && intent_samples >= 5 && behavior_samples >= 5 {
+    "high"
+  } else if available_source_count >= 2 {
+    "medium"
+  } else {
+    "low"
+  };
+
+  json!({
+    "dominant_intent": dominant_intent,
+    "dominant_behavior": dominant_behavior,
+    "active_app": active_app.clone(),
+    "active_window": active_window.clone(),
+    "active_app_window": {
+      "app": active_app,
+      "window": active_window,
+    },
+    "top_suggestions": top_suggestions,
+    "confidence_hint": confidence_hint,
+    "missing_sources": missing_sources,
+  })
+}
+
+fn read_latest_desktop_cognition_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let mut missing_sources = Vec::new();
+
+  let intent_details = match read_latest_screen_intent_report("screen_intent_watch", "Latest Screen Intent Report") {
+    Ok((_, details)) => Some(details),
+    Err(_) => {
+      missing_sources.push("screen_intent_watch".to_string());
+      None
+    }
+  };
+
+  let behavior_details =
+    match read_latest_screen_behavior_report("screen_behavior_watch", "Latest Screen Behavior Report") {
+      Ok((_, details)) => Some(details),
+      Err(_) => {
+        missing_sources.push("screen_behavior_watch".to_string());
+        None
+      }
+    };
+
+  let snapshot_details = match read_latest_desktop_snapshot_report("desktop_snapshot", "Latest Desktop Snapshot Report")
+  {
+    Ok((_, details)) => Some(details),
+    Err(_) => {
+      missing_sources.push("desktop_snapshot".to_string());
+      None
+    }
+  };
+
+  if intent_details.is_none() && behavior_details.is_none() && snapshot_details.is_none() {
+    return Err(
+      "No desktop cognition sources found yet. Run `screen intent`, `watch screen behavior`, or `desktop snapshot` first."
+        .to_string(),
+    );
+  }
+
+  let report = build_desktop_cognition_json(
+    intent_details.as_deref(),
+    behavior_details.as_deref(),
+    snapshot_details.as_deref(),
+    &missing_sources,
+  );
+
+  let dominant_intent = report
+    .get("dominant_intent")
+    .and_then(|value| value.as_str())
+    .unwrap_or("unknown");
+  let dominant_behavior = report
+    .get("dominant_behavior")
+    .and_then(|value| value.as_str())
+    .unwrap_or("unknown");
+  let active_app = report
+    .get("active_app")
+    .and_then(|value| value.as_str())
+    .unwrap_or("unknown");
+  let confidence_hint = report
+    .get("confidence_hint")
+    .and_then(|value| value.as_str())
+    .unwrap_or("low");
+  let top_suggestion_count = report
+    .get("top_suggestions")
+    .and_then(|value| value.as_array())
+    .map(|items| items.len())
+    .unwrap_or(0);
+
+  let mut details = vec![
+    format!("source={target}"),
+    "merged_from=screen_intent_watch+screen_behavior_watch+desktop_snapshot".into(),
+    format!("dominant_intent={dominant_intent}"),
+    format!("dominant_behavior={dominant_behavior}"),
+    format!("active_app={active_app}"),
+    format!("confidence_hint={confidence_hint}"),
+    format!("top_suggestions_count={top_suggestion_count}"),
+  ];
+
+  if let Some(run_log) = intent_details
+    .as_ref()
+    .and_then(|report_details| extract_detail_value(report_details, "run_log"))
+  {
+    details.push(format!("intent_run_log={run_log}"));
+  }
+  if let Some(run_log) = behavior_details
+    .as_ref()
+    .and_then(|report_details| extract_detail_value(report_details, "run_log"))
+  {
+    details.push(format!("behavior_run_log={run_log}"));
+  }
+  if let Some(run_log) = snapshot_details
+    .as_ref()
+    .and_then(|report_details| extract_detail_value(report_details, "run_log"))
+  {
+    details.push(format!("snapshot_run_log={run_log}"));
+  }
+
+  if missing_sources.is_empty() {
+    details.push("missing_sources=none".into());
+  } else {
+    details.push(format!("missing_sources={}", missing_sources.join("|")));
+  }
+  details.push(format!("DESKTOP_COGNITION_JSON={report}"));
+
+  let summary = format!(
+    "{label}: intent={dominant_intent}, behavior={dominant_behavior}, app={active_app}, confidence={confidence_hint}."
+  );
+  Ok((summary, details))
+}
+
 fn is_safe_autonomous_action_kind(kind: &str) -> bool {
   matches!(
     kind,
@@ -4337,6 +5033,8 @@ fn is_safe_autonomous_action_kind(kind: &str) -> bool {
       | "read_intent_report"
       | "read_behavior_report"
       | "read_watch_report"
+      | "read_snapshot_report"
+      | "read_desktop_cognition_report"
       | "read_screen_summary_report"
       | "read_page_agent_report"
   )
@@ -4737,9 +5435,8 @@ fn parse_coordinate_pair(raw: &str) -> Option<(i32, i32)> {
     .split(|ch: char| !ch.is_ascii_digit() && ch != '-')
     .filter(|token| !token.is_empty())
     .filter_map(|token| token.parse::<i32>().ok())
-    .take(2)
     .collect::<Vec<_>>();
-  if numbers.len() < 2 {
+  if numbers.len() != 2 {
     return None;
   }
   Some((numbers[0], numbers[1]))
@@ -4750,9 +5447,8 @@ fn parse_coordinate_quad(raw: &str) -> Option<(i32, i32, i32, i32)> {
     .split(|ch: char| !ch.is_ascii_digit() && ch != '-')
     .filter(|token| !token.is_empty())
     .filter_map(|token| token.parse::<i32>().ok())
-    .take(4)
     .collect::<Vec<_>>();
-  if numbers.len() < 4 {
+  if numbers.len() != 4 {
     return None;
   }
   Some((numbers[0], numbers[1], numbers[2], numbers[3]))
@@ -4852,12 +5548,84 @@ fn resolve_skill_script_path(script_value: &str) -> Result<PathBuf, String> {
 }
 
 fn ensure_default_script(path: &Path, content: &str) -> Result<(), String> {
-  if path.exists() {
+  if !path.exists() {
+    fs::write(path, content).map_err(|error| format!("Failed to write default script: {error}"))?;
     return Ok(());
   }
 
-  fs::write(path, content).map_err(|error| format!("Failed to write default script: {error}"))?;
+  let existing = match fs::read_to_string(path) {
+    Ok(content) => content,
+    Err(error) => {
+      eprintln!(
+        "failed to read existing default script {}, skip refresh: {error}",
+        path.to_string_lossy()
+      );
+      return Ok(());
+    }
+  };
+  if existing == content {
+    return Ok(());
+  }
+
+  let filename = path
+    .file_name()
+    .and_then(|name| name.to_str())
+    .unwrap_or_default();
+  let is_managed = existing.contains("# xixi-managed-script:")
+    || is_legacy_default_script(filename, &existing);
+  if !is_managed {
+    return Ok(());
+  }
+
+  let backup_path = path.with_file_name(format!("{filename}.bak"));
+  if !backup_path.exists() {
+    fs::write(&backup_path, &existing).map_err(|error| {
+      format!(
+        "Failed to write default script backup {}: {error}",
+        backup_path.to_string_lossy()
+      )
+    })?;
+  }
+
+  fs::write(path, content).map_err(|error| format!("Failed to refresh default script: {error}"))?;
   Ok(())
+}
+
+fn is_legacy_default_script(filename: &str, content: &str) -> bool {
+  match filename {
+    "screen_watch_ocr.py" => {
+      content.contains("screen_watch_ocr start keyword=") && content.contains("done scans=")
+    }
+    "desktop_skill_ops.py" => {
+      content.contains("desktop_skill_ops received:")
+        && content.contains("usage: move:x,y")
+        && content.contains("rightclick")
+    }
+    "screen_intent_watch.py" => {
+      content.contains("screen_intent_watch start")
+        && content.contains("INTENT_RESULT_JSON=")
+        && content.contains("dominant_intent")
+    }
+    "screen_behavior_watch.py" => {
+      content.contains("screen_behavior_watch start")
+        && content.contains("BEHAVIOR_RESULT_JSON=")
+        && content.contains("dominant_behavior")
+    }
+    "page_agent_web.py" => {
+      content.contains("PAGE_AGENT_RESULT_JSON=")
+        || (content.contains("playwright") && content.contains("mode=inspect"))
+    }
+    "human_input_ops.py" => {
+      content.contains("human_input_ops")
+        || (content.contains("smooth") && content.contains("drag:"))
+    }
+    "safe_desktop_action.py" => {
+      content.contains("safe_desktop_action")
+        || (content.contains("blocked dangerous command") && content.contains("hotkey:"))
+    }
+    "desktop_snapshot.py" => content.contains("SNAPSHOT_RESULT_JSON="),
+    _ => false,
+  }
 }
 
 fn sanitize_path_token(raw: &str) -> String {
@@ -5012,6 +5780,17 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "Run `watch screen <keyword>` first so a fresh OCR watch log is generated.".into(),
       "Wait for `screen_watch_ocr.py` to finish and write WATCH_RESULT_JSON.".into(),
       "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_watch_ocr log.".into(),
+    ],
+    "read_snapshot_report" => vec![
+      "Run `desktop snapshot` first so a fresh snapshot log is generated.".into(),
+      "Wait for `desktop_snapshot.py` to finish and write SNAPSHOT_RESULT_JSON.".into(),
+      "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest desktop_snapshot log.".into(),
+    ],
+    "read_desktop_cognition_report" => vec![
+      "Run `screen intent`, `watch screen behavior`, and `desktop snapshot` for full coverage.".into(),
+      "This report can still work with partial logs, but confidence will be lower.".into(),
+      "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_intent_watch, screen_behavior_watch, and desktop_snapshot logs."
+        .into(),
     ],
     "read_screen_summary_report" => vec![
       "Run both `screen intent` and `watch screen behavior` first so fresh logs exist.".into(),
@@ -5317,6 +6096,28 @@ mod tests {
   }
 
   #[test]
+  fn plans_desktop_snapshot_request_with_default_payload() {
+    let plan = plan_user_request("desktop snapshot".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "medium-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "desktop_snapshot.py");
+    assert_eq!(payload.input, Some("ocr=1 max_chars=1200".to_string()));
+  }
+
+  #[test]
   fn plans_screen_intent_request_with_default_payload() {
     let plan = plan_user_request("screen intent".to_string());
     assert!(plan.can_execute_directly);
@@ -5420,10 +6221,94 @@ mod tests {
   }
 
   #[test]
+  fn plans_latest_desktop_snapshot_report_request() {
+    let plan = plan_user_request("latest desktop snapshot".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_snapshot_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("desktop_snapshot")
+    );
+  }
+
+  #[test]
+  fn plans_desktop_snapshot_report_alias_request() {
+    let plan = plan_user_request("desktop snapshot report".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_snapshot_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("desktop_snapshot")
+    );
+  }
+
+  #[test]
+  fn plans_latest_desktop_cognition_report_request() {
+    let plan = plan_user_request("latest desktop cognition".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_desktop_cognition_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("desktop_cognition")
+    );
+  }
+
+  #[test]
+  fn plans_desktop_cognition_report_alias_request() {
+    let plan = plan_user_request("desktop cognition report".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_desktop_cognition_report")
+    );
+  }
+
+  #[test]
+  fn plans_watch_report_alias_requests() {
+    let alias_1 = plan_user_request("screen watch report".to_string());
+    let alias_2 = plan_user_request("latest watch report".to_string());
+    let alias_3 = plan_user_request("latest ocr watch".to_string());
+    assert_eq!(
+      alias_1.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_watch_report")
+    );
+    assert_eq!(
+      alias_2.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_watch_report")
+    );
+    assert_eq!(
+      alias_3.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_watch_report")
+    );
+  }
+
+  #[test]
   fn plans_run_screen_suggestion_request() {
     let plan = plan_user_request("run screen suggestion".to_string());
     assert!(plan.can_execute_directly);
-    assert_eq!(plan.risk_level, "high-risk");
+    assert_eq!(plan.risk_level, "medium-risk");
     assert_eq!(
       plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
       Some("run_screen_suggestion")
@@ -5438,9 +6323,143 @@ mod tests {
   }
 
   #[test]
+  fn plans_run_screen_suggestion_alias_requests() {
+    let alias_1 = plan_user_request("execute screen suggestion".to_string());
+    let alias_2 = plan_user_request("assistive next action".to_string());
+    let alias_3 = plan_user_request("auto next action".to_string());
+    assert_eq!(
+      alias_1.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_screen_suggestion")
+    );
+    assert_eq!(
+      alias_2.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_screen_suggestion")
+    );
+    assert_eq!(
+      alias_3.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_screen_suggestion")
+    );
+  }
+
+  #[test]
+  fn builds_desktop_cognition_json_with_all_sources() {
+    let intent_details = vec![
+      "dominant_intent=research".to_string(),
+      "dominant_process=Code.exe".to_string(),
+      "dominant_window_title=README.md - VS Code".to_string(),
+      "samples_collected=8".to_string(),
+      "suggested_commands=open app edge | search web rust serde".to_string(),
+    ];
+    let behavior_details = vec![
+      "dominant_behavior=focused_typing".to_string(),
+      "dominant_process=Code.exe".to_string(),
+      "dominant_window_title=README.md - VS Code".to_string(),
+      "samples_collected=9".to_string(),
+      "suggested_commands=open app edge | open folder downloads".to_string(),
+    ];
+    let snapshot_details = vec![
+      "process=Code.exe".to_string(),
+      "window_title=README.md - VS Code".to_string(),
+      "ocr_ok=true".to_string(),
+    ];
+
+    let report = build_desktop_cognition_json(
+      Some(&intent_details),
+      Some(&behavior_details),
+      Some(&snapshot_details),
+      &[],
+    );
+
+    assert_eq!(
+      report.get("dominant_intent").and_then(|value| value.as_str()),
+      Some("research")
+    );
+    assert_eq!(
+      report.get("dominant_behavior").and_then(|value| value.as_str()),
+      Some("focused_typing")
+    );
+    assert_eq!(report.get("active_app").and_then(|value| value.as_str()), Some("Code.exe"));
+    assert_eq!(
+      report.get("active_window").and_then(|value| value.as_str()),
+      Some("README.md - VS Code")
+    );
+    assert_eq!(
+      report.get("confidence_hint").and_then(|value| value.as_str()),
+      Some("high")
+    );
+    assert_eq!(
+      report
+        .get("missing_sources")
+        .and_then(|value| value.as_array())
+        .map(|items| items.len()),
+      Some(0)
+    );
+    assert_eq!(
+      report
+        .get("top_suggestions")
+        .and_then(|value| value.as_array())
+        .map(|items| items.len()),
+      Some(3)
+    );
+  }
+
+  #[test]
+  fn builds_desktop_cognition_json_with_missing_sources() {
+    let behavior_details = vec![
+      "dominant_behavior=idle_reading".to_string(),
+      "samples_collected=3".to_string(),
+      "suggested_commands=search web ui automation".to_string(),
+    ];
+    let missing_sources = vec!["screen_intent_watch".to_string(), "desktop_snapshot".to_string()];
+
+    let report = build_desktop_cognition_json(None, Some(&behavior_details), None, &missing_sources);
+
+    assert_eq!(
+      report.get("dominant_intent").and_then(|value| value.as_str()),
+      Some("unknown")
+    );
+    assert_eq!(
+      report.get("dominant_behavior").and_then(|value| value.as_str()),
+      Some("idle_reading")
+    );
+    assert_eq!(report.get("active_app").and_then(|value| value.as_str()), Some("unknown"));
+    assert_eq!(
+      report.get("confidence_hint").and_then(|value| value.as_str()),
+      Some("low")
+    );
+    assert_eq!(
+      report
+        .get("missing_sources")
+        .and_then(|value| value.as_array())
+        .map(|items| items.len()),
+      Some(2)
+    );
+  }
+
+  #[test]
   fn materializes_suggestion_placeholders_with_intent() {
     let command = materialize_suggestion_placeholders("search web <topic>", "trading");
     assert_eq!(command, "search web trading");
+  }
+
+  #[test]
+  fn materializes_suggestion_placeholders_with_unknown_intent() {
+    assert_eq!(
+      materialize_suggestion_placeholders("search web <topic>", "unknown"),
+      "search web desktop"
+    );
+    assert_eq!(
+      materialize_suggestion_placeholders("watch screen <message keyword>", "unknown"),
+      "watch screen message"
+    );
+    assert_eq!(
+      materialize_suggestion_placeholders("type <draft text>", "unknown"),
+      "type hello from xixi"
+    );
+    assert_eq!(
+      materialize_suggestion_placeholders("search web <goal>", ""),
+      "search web desktop"
+    );
   }
 
   #[test]
@@ -5454,6 +6473,54 @@ mod tests {
     assert_eq!(selected.0, "open app vscode");
     assert_eq!(selected.1.kind, "open_app");
     assert_eq!(selected.2, "intent");
+  }
+
+  #[test]
+  fn rejects_unsafe_only_summary_suggestions() {
+    let summary_details = vec![
+      "intent_suggested_commands=run skill desktop_skill_ops hotkey:ctrl,s | type <draft text>".to_string(),
+      "behavior_suggested_commands=human click <x,y>".to_string(),
+    ];
+    assert!(select_safe_summary_suggestion(&summary_details, "coding").is_none());
+  }
+
+  #[test]
+  fn falls_back_to_safe_behavior_suggestion_when_intent_is_unsafe() {
+    let summary_details = vec![
+      "intent_suggested_commands=type <draft text>".to_string(),
+      "behavior_suggested_commands=open app edge".to_string(),
+    ];
+    let selected = select_safe_summary_suggestion(&summary_details, "writing")
+      .expect("should select safe behavior command");
+    assert_eq!(selected.0, "open app edge");
+    assert_eq!(selected.1.kind, "open_app");
+    assert_eq!(selected.2, "behavior");
+  }
+
+  #[test]
+  fn does_not_select_recursive_screen_suggestion_command() {
+    let summary_details = vec!["intent_suggested_commands=run screen suggestion".to_string()];
+    assert!(select_safe_summary_suggestion(&summary_details, "unknown").is_none());
+  }
+
+  #[test]
+  fn rejects_malformed_coordinate_requests() {
+    let click_plan = plan_user_request("click 960".to_string());
+    let double_click_plan = plan_user_request("double click 960".to_string());
+    let drag_plan = plan_user_request("drag mouse 10,20".to_string());
+    assert!(!click_plan.can_execute_directly);
+    assert_eq!(click_plan.risk_level, "not-implemented");
+    assert!(!double_click_plan.can_execute_directly);
+    assert_eq!(double_click_plan.risk_level, "not-implemented");
+    assert!(!drag_plan.can_execute_directly);
+    assert_eq!(drag_plan.risk_level, "not-implemented");
+  }
+
+  #[test]
+  fn rejects_drag_request_with_extra_coordinates() {
+    let plan = plan_user_request("drag mouse 10,20 to 30,40 and 999,999".to_string());
+    assert!(!plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "not-implemented");
   }
 
   #[test]
@@ -5800,6 +6867,67 @@ mod tests {
   fn sanitizes_path_token_for_log_filename() {
     assert_eq!(sanitize_path_token("screen watch/ocr"), "screen_watch_ocr");
     assert_eq!(sanitize_path_token(""), "skill_run");
+  }
+
+  #[test]
+  fn refreshes_legacy_default_script_and_writes_backup() {
+    let root = env::temp_dir().join(format!("xixi-script-refresh-{}", now_unix_ms()));
+    fs::create_dir_all(&root).expect("temp dir should create");
+    let script_path = root.join("screen_watch_ocr.py");
+    let legacy_content = "screen_watch_ocr start keyword=stock\ndone scans=1 hits=0\n";
+    fs::write(&script_path, legacy_content).expect("legacy script write should succeed");
+
+    let next_content = "# xixi-managed-script:v2\nprint('updated')\n";
+    ensure_default_script(&script_path, next_content).expect("refresh should succeed");
+
+    let refreshed = fs::read_to_string(&script_path).expect("refreshed script should read");
+    assert_eq!(refreshed, next_content);
+
+    let backup_path = root.join("screen_watch_ocr.py.bak");
+    let backup = fs::read_to_string(&backup_path).expect("backup should exist");
+    assert_eq!(backup, legacy_content);
+
+    let _ = fs::remove_dir_all(&root);
+  }
+
+  #[test]
+  fn does_not_overwrite_non_managed_existing_script() {
+    let root = env::temp_dir().join(format!("xixi-script-custom-{}", now_unix_ms()));
+    fs::create_dir_all(&root).expect("temp dir should create");
+    let script_path = root.join("desktop_skill_ops.py");
+    let custom_content = "print('my custom script')\n";
+    fs::write(&script_path, custom_content).expect("custom script write should succeed");
+
+    let default_content = "# xixi-managed-script:v2\nprint('default')\n";
+    ensure_default_script(&script_path, default_content).expect("ensure should succeed");
+
+    let after = fs::read_to_string(&script_path).expect("custom script should read");
+    assert_eq!(after, custom_content);
+
+    let backup_path = root.join("desktop_skill_ops.py.bak");
+    assert!(!backup_path.exists());
+
+    let _ = fs::remove_dir_all(&root);
+  }
+
+  #[test]
+  fn skips_refresh_when_existing_script_is_not_utf8() {
+    let root = env::temp_dir().join(format!("xixi-script-nonutf8-{}", now_unix_ms()));
+    fs::create_dir_all(&root).expect("temp dir should create");
+    let script_path = root.join("screen_watch_ocr.py");
+    let original = vec![0xff, 0xfe, 0x00, 0x01, 0x02];
+    fs::write(&script_path, &original).expect("non-utf8 script write should succeed");
+
+    let default_content = "# xixi-managed-script:v2\nprint('default')\n";
+    ensure_default_script(&script_path, default_content).expect("ensure should not fail on non-utf8 file");
+
+    let after = fs::read(&script_path).expect("script bytes should read");
+    assert_eq!(after, original);
+
+    let backup_path = root.join("screen_watch_ocr.py.bak");
+    assert!(!backup_path.exists());
+
+    let _ = fs::remove_dir_all(&root);
   }
 
   #[test]

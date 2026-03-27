@@ -22,11 +22,12 @@
 
 ## Phase 3 - Safety + UX Hardening
 
-- [ ] Risk classification for command categories
+- [x] Risk classification for command categories
 - [x] Confirm-before-run on high-risk operations
 - [x] Model API settings panel and model chat mode (OpenAI-compatible endpoint)
 - [x] Permission profile UI for users (safe/balanced/advanced)
 - [x] GPT-style simplified chat layout + desktop pet multi-pose window (v1)
+- [x] Screen perception merge report (v1: `latest desktop cognition`)
 - [ ] Accessibility improvements for seniors and low-vision users
 - [ ] Better multilingual command support
 
@@ -53,7 +54,7 @@
 
 ## Phase 6 - Advanced Assistive Intelligence (long-term)
 
-- [ ] Chat + voice driven “hands-free” computer operation mode
+- [ ] Chat + voice driven "hands-free" computer operation mode
 - [ ] Assistive workflows for elderly and action-limited users
 - [ ] Stock observation assistant with transparent reasoning
 - [ ] Broker execution integration only with explicit consent and risk controls

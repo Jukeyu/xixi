@@ -1,7 +1,20 @@
 # xixi | Desktop Pet Assistant
 
-xixi is a desktop pet assistant that turns chat commands into real local computer actions.
-The long-term goal is an assistive, hands-free desktop helper for older adults and users with limited mobility.
+xixi is an open-source desktop pet assistant that turns chat commands into real local computer actions.
+Our long-term goal is an assistive, hands-free desktop helper for older adults and users with limited mobility.
+
+This is not a mock UI project. We only expose features that are wired to real execution paths.
+
+## Vision
+
+Build a companion that can:
+
+- chat naturally
+- understand what is happening on the main screen
+- operate the local computer safely through reusable skills
+- later accept voice and remote chat commands (WeChat / Feishu / enterprise chat)
+
+We want xixi to become a practical accessibility layer for everyday computer use.
 
 ## Current status (as of 2026-03-28)
 
@@ -14,8 +27,10 @@ This repository contains a runnable Windows desktop prototype with real executio
 - Local skill system (JSON + Python/PowerShell scripts)
 - Screen observation stack:
   - `screen_watch_ocr.py`
+  - `desktop_snapshot.py`
   - `screen_intent_watch.py`
   - `screen_behavior_watch.py`
+  - `latest desktop snapshot`
   - `latest screen watch`
   - `latest screen summary`
   - `run screen suggestion` (auto-selects one safe next action from latest summary)
@@ -26,6 +41,14 @@ This repository contains a runnable Windows desktop prototype with real executio
 - Remote bridge v1:
   - local queue polling in desktop app
   - Feishu callback gateway script
+
+## What makes xixi different
+
+- Real command execution with explicit risk levels
+- Screen observation stack for intent and behavior signals
+- Local skill framework you can extend with your own scripts
+- Safety-first boundaries (confirmation gates, allowed paths, audit logs)
+- Built as a desktop pet experience, not just a command console
 
 ## Why this project
 
@@ -84,6 +107,10 @@ type hello from xixi
 hotkey ctrl,s
 
 watch screen stock
+desktop snapshot
+latest desktop snapshot
+latest desktop cognition
+desktop cognition report
 screen intent coding
 watch screen behavior workflow
 latest screen watch
@@ -108,6 +135,31 @@ See:
 
 - `docs/skills/local-skills.md`
 - `docs/skills/github-research-notes-2026-03-27.md`
+
+### Write your own skill (example)
+
+1) Create a skill JSON:
+
+`%LOCALAPPDATA%\xixi\skills\open_calculator.json`
+
+```json
+{
+  "id": "open_calculator",
+  "name": "Open Calculator",
+  "description": "Launch Windows calculator.",
+  "kind": "open_app",
+  "target_template": "calculator",
+  "risk_level": "low-risk",
+  "aliases": ["calculator", "open calc"]
+}
+```
+
+2) Restart xixi (or reload skills).
+3) Run:
+
+```text
+run skill open_calculator
+```
 
 ## Remote chat bridge (v1)
 
@@ -161,6 +213,16 @@ python -m playwright install chromium
 - Better multilingual command support
 - Voice input/output pipeline
 - Community skill packaging and contribution workflow
+
+## How to contribute right now
+
+High-impact contribution areas:
+
+- Screen understanding and intent inference
+- Reliable local automation skills (Windows-first)
+- Accessibility UX (contrast, readability, keyboard-only flow)
+- Safety guardrails and recovery logic
+- Integration bridges (Feishu / WeChat / enterprise chat)
 
 ## Contributing
 

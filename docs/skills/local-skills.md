@@ -24,6 +24,7 @@ run skill open_music_player
 run skill open_tradingview
 run skill search_stock_news tsla
 run skill screen_watch_ocr keyword=stock duration=20
+run skill desktop_snapshot ocr=1 max_chars=1200
 run skill screen_intent_watch goal=trading duration=16 samples=6
 run skill screen_behavior_watch goal=workflow duration=16 samples=10
 run skill page_agent_web mode=inspect url=https://example.com max_items=30
@@ -74,6 +75,7 @@ run skill human_input_ops type:hello from xixi
 - Current allowed extensions: `.py`, `.ps1`
 - Built-in templates created automatically:
   - `screen_watch_ocr.py`
+  - `desktop_snapshot.py`
   - `screen_intent_watch.py`
   - `screen_behavior_watch.py`
   - `page_agent_web.py`
@@ -111,6 +113,19 @@ xixi starts the script and passes the full input string as script arg #1.
 - `max_hits`: stop after N hits
 - `region`: optional `left,top,width,height`
 
+`desktop_snapshot.py` option keys:
+
+- `ocr`: `1|0` to enable or disable OCR capture
+- `max_chars`: max OCR characters to keep in report
+- `region`: optional `left,top,width,height`
+- `psm`: tesseract page segmentation mode (default `6`)
+
+Example:
+
+```text
+run skill desktop_snapshot ocr=1 max_chars=1200
+```
+
 `screen_intent_watch.py` option keys:
 
 - `goal`: optional goal hint (for intent scoring)
@@ -143,6 +158,7 @@ run skill screen_behavior_watch goal=workflow duration=16 interval=1.0 samples=1
 
 Use `latest screen summary` after running both `screen intent` and `watch screen behavior`.
 It merges the two latest logs into one desktop-level intent + behavior snapshot.
+Use `latest desktop cognition` to merge intent + behavior + snapshot into one higher-level report.
 
 `page_agent_web.py` option keys:
 
@@ -202,6 +218,10 @@ watch intent trading
 latest screen intent
 watch screen behavior workflow
 latest screen behavior
+desktop snapshot
+latest desktop snapshot
+latest desktop cognition
+desktop cognition report
 latest screen watch
 desktop status
 screen summary
