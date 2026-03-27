@@ -1192,6 +1192,95 @@ fn plan_user_request(request: String) -> CommandPlan {
     );
   }
 
+  if let Some(raw_page_inspect) =
+    extract_after_prefix_case_insensitive(trimmed, &["page agent inspect ", "page inspect "])
+  {
+    let url = raw_page_inspect.trim();
+    if !url.is_empty() {
+      if let Ok(action) = build_run_script_action(
+        "page_agent_web.py",
+        Some(format!("mode=inspect url={url} max_items=30")),
+        "Page Agent Web (inspect)",
+      ) {
+        return action_plan(
+          "I can inspect that webpage and summarize interactive elements.",
+          "medium-risk",
+          vec![
+            step("plan-page-1", "Parse URL", &format!("Resolved url={url}"), "done"),
+            step("plan-page-2", "Build script payload", "Prepared page inspect command", "done"),
+            step("plan-page-3", "Run local script", "Inspect web page structure", "ready"),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if let Some(raw_page_click) =
+    extract_after_prefix_case_insensitive(trimmed, &["page agent click ", "page click "])
+  {
+    let parts = raw_page_click.split_whitespace().collect::<Vec<_>>();
+    if parts.len() >= 2 {
+      let url = parts[0];
+      let text = parts[1..].join("_");
+      if let Ok(action) = build_run_script_action(
+        "page_agent_web.py",
+        Some(format!("mode=click_text url={url} text={text}")),
+        "Page Agent Web (click text)",
+      ) {
+        return action_plan(
+          "I can open that page and click the target text element.",
+          "high-risk",
+          vec![
+            step("plan-page-click-1", "Parse target", &format!("url={url}, text={text}"), "done"),
+            step(
+              "plan-page-click-2",
+              "Build script payload",
+              "Prepared page click command",
+              "done",
+            ),
+            step(
+              "plan-page-click-3",
+              "Run local script",
+              "Execute page click interaction",
+              "ready",
+            ),
+          ],
+          action,
+        );
+      }
+    }
+  }
+
+  if lowered == "latest page agent"
+    || lowered == "latest page report"
+    || lowered == "page agent report"
+    || lowered == "latest page agent report"
+  {
+    return direct_plan(
+      "I can read the latest page-agent run report now.",
+      vec![
+        step(
+          "plan-page-report-1",
+          "Resolve command",
+          "Matched latest page-agent report query",
+          "done",
+        ),
+        step(
+          "plan-page-report-2",
+          "Read latest run log",
+          "Load most recent page_agent_web log",
+          "ready",
+        ),
+      ],
+      LocalAction {
+        kind: "read_page_agent_report".into(),
+        target: "page_agent_web".into(),
+        label: "Latest Page Agent Report".into(),
+      },
+    );
+  }
+
   if lowered == "latest screen intent"
     || lowered == "screen intent report"
     || lowered == "intent report"
@@ -1309,6 +1398,7 @@ fn execute_local_action(action: LocalAction) -> ActionExecutionResult {
     "run_script" => run_script(&action.target, &action.label),
     "read_intent_report" => read_latest_screen_intent_report(&action.target, &action.label),
     "read_behavior_report" => read_latest_screen_behavior_report(&action.target, &action.label),
+    "read_page_agent_report" => read_latest_page_agent_report(&action.target, &action.label),
     other => Err(format!("Unsupported action kind: {other}")),
   };
 
@@ -2616,6 +2706,239 @@ if __name__ == '__main__':
   )?;
 
   ensure_default_script(
+    &scripts_dir.join("page_agent_web.py"),
+    r#"import datetime
+import json
+import shlex
+import sys
+import time
+
+def log(msg: str):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    print(f"[{now}] {msg}", flush=True)
+
+def parse_options(raw: str):
+    defaults = {
+        "mode": "inspect",
+        "url": "",
+        "text": "",
+        "headless": "1",
+        "timeout": "20",
+        "max_items": "30",
+        "wait_sec": "0.8",
+    }
+    text = (raw or "").strip()
+    if not text:
+        return defaults
+
+    try:
+        parts = shlex.split(text)
+    except Exception:
+        parts = text.split()
+
+    for token in parts:
+        if "=" in token:
+            key, value = token.split("=", 1)
+            key = key.strip().lower()
+            value = value.strip()
+            if key in defaults and value:
+                defaults[key] = value
+            continue
+        if not defaults["url"]:
+            defaults["url"] = token.strip()
+    return defaults
+
+def parse_int(value: str, default: int, min_v: int, max_v: int):
+    try:
+        parsed = int(value)
+    except Exception:
+        return default
+    return max(min_v, min(max_v, parsed))
+
+def parse_float(value: str, default: float, min_v: float, max_v: float):
+    try:
+        parsed = float(value)
+    except Exception:
+        return default
+    return max(min_v, min(max_v, parsed))
+
+def parse_bool(value: str):
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+def normalize_url(url: str):
+    value = (url or "").strip()
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    return "https://" + value
+
+def collect_interactive_elements(page, max_items: int):
+    items = page.evaluate(
+        """() => {
+            const nodes = Array.from(document.querySelectorAll(
+              'a,button,input,textarea,select,[role=\"button\"],[onclick]'
+            ));
+            const out = [];
+            for (const el of nodes) {
+              const rect = el.getBoundingClientRect();
+              if (rect.width < 2 || rect.height < 2) continue;
+              const style = window.getComputedStyle(el);
+              if (style.visibility === 'hidden' || style.display === 'none') continue;
+
+              const text = (
+                el.innerText ||
+                el.textContent ||
+                el.getAttribute('aria-label') ||
+                el.getAttribute('title') ||
+                ''
+              ).trim().replace(/\\s+/g, ' ');
+
+              out.push({
+                tag: (el.tagName || '').toLowerCase(),
+                role: (el.getAttribute('role') || '').toLowerCase(),
+                type: (el.getAttribute('type') || '').toLowerCase(),
+                text: text.slice(0, 160),
+                id: (el.id || '').slice(0, 80),
+                name: (el.getAttribute('name') || '').slice(0, 80),
+                href: (el.getAttribute('href') || '').slice(0, 200),
+                rect: {
+                  x: Math.round(rect.x),
+                  y: Math.round(rect.y),
+                  w: Math.round(rect.width),
+                  h: Math.round(rect.height)
+                }
+              });
+              if (out.length >= 500) break;
+            }
+            return out;
+        }"""
+    )
+    return items[:max_items], len(items)
+
+def click_by_text(page, text: str, timeout_ms: int):
+    if not text:
+        return False, "empty text target"
+    target = text.replace("_", " ").strip()
+    if not target:
+        return False, "empty text target"
+
+    # first: broad text locator
+    try:
+        locator = page.get_by_text(target, exact=False).first
+        locator.wait_for(state="visible", timeout=timeout_ms)
+        locator.click(timeout=timeout_ms)
+        return True, ""
+    except Exception as error:
+        first_error = str(error)
+
+    # second: button role by name
+    try:
+        locator = page.get_by_role("button", name=target).first
+        locator.wait_for(state="visible", timeout=timeout_ms)
+        locator.click(timeout=timeout_ms)
+        return True, ""
+    except Exception as error:
+        second_error = str(error)
+
+    return False, (first_error + " | " + second_error)[:420]
+
+def main():
+    raw = sys.argv[1] if len(sys.argv) > 1 else ""
+    opts = parse_options(raw)
+
+    mode = opts["mode"].strip().lower()
+    url = normalize_url(opts["url"])
+    text_target = opts["text"]
+    headless = parse_bool(opts["headless"])
+    timeout_sec = parse_int(opts["timeout"], default=20, min_v=5, max_v=120)
+    timeout_ms = timeout_sec * 1000
+    max_items = parse_int(opts["max_items"], default=30, min_v=5, max_v=150)
+    wait_sec = parse_float(opts["wait_sec"], default=0.8, min_v=0.1, max_v=5.0)
+
+    if mode not in {"inspect", "click_text"}:
+        log(f"unsupported mode: {mode}")
+        raise SystemExit(1)
+
+    if not url:
+        log("url is required, example: mode=inspect url=https://example.com")
+        raise SystemExit(1)
+
+    log(f"page_agent_web start mode={mode} url={url} headless={headless} timeout={timeout_sec}s")
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as error:
+        log("missing dependency. install with:")
+        log("pip install playwright")
+        log("python -m playwright install chromium")
+        log(f"import error: {error}")
+        raise SystemExit(1)
+
+    started = time.time()
+    result = {
+        "mode": mode,
+        "url": url,
+        "title": "",
+        "interactive_count": 0,
+        "interactive_elements": [],
+        "action": "",
+        "success": False,
+        "error": "",
+        "duration_sec": 0.0,
+    }
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context()
+        page = context.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            result["url"] = page.url
+            result["title"] = page.title()
+
+            if mode == "inspect":
+                items, total = collect_interactive_elements(page, max_items=max_items)
+                result["interactive_count"] = total
+                result["interactive_elements"] = items
+                result["action"] = "inspect"
+                result["success"] = True
+            elif mode == "click_text":
+                ok, error = click_by_text(page, text_target, timeout_ms=timeout_ms)
+                if ok:
+                    time.sleep(wait_sec)
+                    result["url"] = page.url
+                    result["title"] = page.title()
+                    items, total = collect_interactive_elements(page, max_items=max_items)
+                    result["interactive_count"] = total
+                    result["interactive_elements"] = items
+                    result["action"] = f"click_text:{text_target}"
+                    result["success"] = True
+                else:
+                    result["action"] = f"click_text:{text_target}"
+                    result["error"] = error
+                    result["success"] = False
+            else:
+                result["error"] = f"unsupported mode: {mode}"
+                result["success"] = False
+        except Exception as error:
+            result["error"] = str(error)[:420]
+            result["success"] = False
+        finally:
+            context.close()
+            browser.close()
+
+    result["duration_sec"] = round(time.time() - started, 2)
+    output = json.dumps(result, ensure_ascii=False)
+    print(output, flush=True)
+    log(f"PAGE_AGENT_RESULT_JSON={output}")
+
+if __name__ == '__main__':
+    main()
+"#,
+  )?;
+
+  ensure_default_script(
     &scripts_dir.join("safe_desktop_action.py"),
     r#"import datetime
 import sys
@@ -2978,6 +3301,17 @@ fn default_local_skills() -> Vec<LocalSkillDefinition> {
       label_template: Some("Screen Behavior Watch".into()),
       risk_level: Some("medium-risk".into()),
       aliases: Some(vec!["behaviorwatch".into(), "screenbehavior".into(), "mousebehavior".into()]),
+    },
+    LocalSkillDefinition {
+      id: "page_agent_web".into(),
+      name: "Page Agent Web".into(),
+      description: "Inspect webpage interactive elements or click elements by text via local browser automation."
+        .into(),
+      kind: "run_script".into(),
+      target_template: "page_agent_web.py".into(),
+      label_template: Some("Page Agent Web".into()),
+      risk_level: Some("medium-risk".into()),
+      aliases: Some(vec!["pageagent".into(), "webagent".into(), "pageinspect".into()]),
     },
     LocalSkillDefinition {
       id: "desktop_action_safe".into(),
@@ -3418,6 +3752,104 @@ fn read_latest_screen_behavior_report(target: &str, label: &str) -> Result<(Stri
         dominant_process
       }
     )
+  };
+
+  Ok((summary, details))
+}
+
+fn read_latest_page_agent_report(target: &str, label: &str) -> Result<(String, Vec<String>), String> {
+  let runs_dir = skills_runs_dir();
+  let entries = fs::read_dir(&runs_dir)
+    .map_err(|error| format!("Cannot read script runs folder {}: {error}", runs_dir.to_string_lossy()))?;
+
+  let mut latest: Option<(SystemTime, PathBuf)> = None;
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.extension().and_then(|ext| ext.to_str()) != Some("log") {
+      continue;
+    }
+    let filename = path
+      .file_name()
+      .and_then(|name| name.to_str())
+      .unwrap_or_default()
+      .to_lowercase();
+    if !filename.contains("page_agent_web") {
+      continue;
+    }
+    let modified = entry
+      .metadata()
+      .ok()
+      .and_then(|meta| meta.modified().ok())
+      .unwrap_or(UNIX_EPOCH);
+
+    let should_replace = match latest.as_ref() {
+      Some((current_modified, _)) => modified > *current_modified,
+      None => true,
+    };
+
+    if should_replace {
+      latest = Some((modified, path));
+    }
+  }
+
+  let (_, latest_log_path) = latest.ok_or_else(|| {
+    "No page-agent logs found yet. Run `page agent inspect <url>` first and wait for completion."
+      .to_string()
+  })?;
+
+  let content = fs::read_to_string(&latest_log_path)
+    .map_err(|error| format!("Cannot read page-agent run log {}: {error}", latest_log_path.to_string_lossy()))?;
+
+  let mut result_json = None;
+  for line in content.lines().rev() {
+    if let Some((_, value)) = line.split_once("PAGE_AGENT_RESULT_JSON=") {
+      result_json = Some(value.trim().to_string());
+      break;
+    }
+    let trimmed = line.trim();
+    if trimmed.starts_with('{') && trimmed.contains("\"mode\"") && trimmed.contains("\"url\"") {
+      result_json = Some(trimmed.to_string());
+      break;
+    }
+  }
+
+  let result_json = result_json.ok_or_else(|| {
+    "Latest page-agent run log does not contain PAGE_AGENT_RESULT_JSON yet. Wait for script to finish and retry."
+      .to_string()
+  })?;
+
+  let parsed: serde_json::Value = serde_json::from_str(&result_json)
+    .map_err(|error| format!("Failed to parse page-agent report JSON from run log: {error}"))?;
+
+  let mode = parsed.get("mode").and_then(|value| value.as_str()).unwrap_or("unknown");
+  let url = parsed.get("url").and_then(|value| value.as_str()).unwrap_or("");
+  let title = parsed.get("title").and_then(|value| value.as_str()).unwrap_or("");
+  let interactive_count = parsed
+    .get("interactive_count")
+    .and_then(|value| value.as_u64())
+    .unwrap_or(0);
+  let action_outcome = parsed.get("action").and_then(|value| value.as_str()).unwrap_or("");
+
+  let mut details = vec![
+    format!("source={target}"),
+    format!("run_log={}", latest_log_path.to_string_lossy()),
+    format!("mode={mode}"),
+    format!("interactive_count={interactive_count}"),
+  ];
+  if !url.is_empty() {
+    details.push(format!("url={url}"));
+  }
+  if !title.is_empty() {
+    details.push(format!("title={}", truncate_error_text(title, 160)));
+  }
+  if !action_outcome.is_empty() {
+    details.push(format!("action={action_outcome}"));
+  }
+
+  let summary = if mode == "unknown" {
+    format!("{label}: report parsed, but mode is unknown.")
+  } else {
+    format!("{label}: mode={mode}, interactive_count={interactive_count}.")
   };
 
   Ok((summary, details))
@@ -3867,7 +4299,7 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "Check run logs under %LOCALAPPDATA%\\xixi\\skills\\runs for stdout/stderr.".into(),
       "Only .py and .ps1 scripts are currently supported.".into(),
       "For Python scripts, ensure python is installed and available in PATH.".into(),
-      "Some scripts need extra packages: mss, pillow, pytesseract, pyautogui.".into(),
+      "Some scripts need extra packages: mss, pillow, pytesseract, pyautogui, playwright.".into(),
     ],
     "read_intent_report" => vec![
       "Run `screen intent` first so a fresh report log is generated.".into(),
@@ -3878,6 +4310,11 @@ fn recovery_tips_for_action(action: &LocalAction) -> Vec<String> {
       "Run `watch screen behavior` first so a fresh behavior log is generated.".into(),
       "Wait for `screen_behavior_watch.py` to finish and write BEHAVIOR_RESULT_JSON.".into(),
       "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest screen_behavior_watch log.".into(),
+    ],
+    "read_page_agent_report" => vec![
+      "Run `page agent inspect <url>` first so a fresh page-agent log is generated.".into(),
+      "Wait for `page_agent_web.py` to finish and write PAGE_AGENT_RESULT_JSON.".into(),
+      "Check %LOCALAPPDATA%\\xixi\\skills\\runs for latest page_agent_web log.".into(),
     ],
     _ => vec!["Retry later or use a simpler supported command phrase.".into()],
   }
@@ -4248,6 +4685,70 @@ mod tests {
         .as_ref()
         .map(|action| action.target.as_str()),
       Some("screen_behavior_watch")
+    );
+  }
+
+  #[test]
+  fn plans_page_agent_inspect_request() {
+    let plan = plan_user_request("page agent inspect https://example.com".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "medium-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("run_script")
+    );
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "page_agent_web.py");
+    assert_eq!(
+      payload.input,
+      Some("mode=inspect url=https://example.com max_items=30".to_string())
+    );
+  }
+
+  #[test]
+  fn plans_latest_page_agent_report_request() {
+    let plan = plan_user_request("latest page agent".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "low-risk");
+    assert_eq!(
+      plan.suggested_action.as_ref().map(|action| action.kind.as_str()),
+      Some("read_page_agent_report")
+    );
+    assert_eq!(
+      plan
+        .suggested_action
+        .as_ref()
+        .map(|action| action.target.as_str()),
+      Some("page_agent_web")
+    );
+  }
+
+  #[test]
+  fn plans_page_agent_click_request() {
+    let plan = plan_user_request("page agent click https://example.com Learn more".to_string());
+    assert!(plan.can_execute_directly);
+    assert_eq!(plan.risk_level, "high-risk");
+
+    let payload: ScriptTargetPayload = serde_json::from_str(
+      &plan
+        .suggested_action
+        .as_ref()
+        .expect("action should exist")
+        .target,
+    )
+    .expect("payload should parse");
+    assert_eq!(payload.script, "page_agent_web.py");
+    assert_eq!(
+      payload.input,
+      Some("mode=click_text url=https://example.com text=Learn_more".to_string())
     );
   }
 

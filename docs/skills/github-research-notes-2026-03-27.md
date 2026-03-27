@@ -60,6 +60,21 @@ This note records practical open-source options for:
    License: MIT  
    Reason not default: architecture is much heavier than current local-script skill runtime; useful as future reference for multi-device orchestration patterns.
 
+4. `page-agent`  
+   Repo: https://github.com/alibaba/page-agent  
+   License: MIT  
+   Decision: adopt its "in-page agent" idea in lightweight form by adding `page_agent_web.py` (inspect interactive DOM elements and optional text-based click).
+
+5. `AppAgent`  
+   Repo: https://github.com/TencentQQGYLab/AppAgent  
+   License: MIT  
+   Decision: use as reference for perception-to-action decomposition and action trace logging style.
+
+6. `osworld-human`  
+   Repo: https://github.com/WukLab/osworld-human  
+   License: MIT (repository level)  
+   Decision: keep as benchmark reference for evaluating future real computer-use efficiency.
+
 ## Academic References Applied
 
 1. ScreenAI (UI + visual understanding)  

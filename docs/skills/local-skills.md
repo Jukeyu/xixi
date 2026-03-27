@@ -26,6 +26,8 @@ run skill search_stock_news tsla
 run skill screen_watch_ocr keyword=stock duration=20
 run skill screen_intent_watch goal=trading duration=16 samples=6
 run skill screen_behavior_watch goal=workflow duration=16 samples=10
+run skill page_agent_web mode=inspect url=https://example.com max_items=30
+run skill page_agent_web mode=click_text url=https://example.com text=More_information
 run skill desktop_action_safe click
 run skill desktop_skill_ops rightclick
 run skill human_input_ops move:980,540
@@ -73,6 +75,7 @@ run skill human_input_ops type:hello from xixi
   - `screen_watch_ocr.py`
   - `screen_intent_watch.py`
   - `screen_behavior_watch.py`
+  - `page_agent_web.py`
   - `human_input_ops.py`
   - `safe_desktop_action.py`
 
@@ -137,6 +140,23 @@ Example:
 run skill screen_behavior_watch goal=workflow duration=16 interval=1.0 samples=10
 ```
 
+`page_agent_web.py` option keys:
+
+- `mode`: `inspect` or `click_text`
+- `url`: target URL
+- `text`: required in `click_text` mode
+- `headless`: `1|0` for headless browser
+- `timeout`: page/action timeout seconds
+- `max_items`: max interactive elements in report
+- `wait_sec`: wait after click before capture
+
+Examples:
+
+```text
+run skill page_agent_web mode=inspect url=https://example.com max_items=30
+run skill page_agent_web mode=click_text url=https://example.com text=More_information
+```
+
 Example (desktop action):
 
 ```text
@@ -174,6 +194,9 @@ watch intent trading
 latest screen intent
 watch screen behavior workflow
 latest screen behavior
+page agent inspect example.com
+page agent click example.com More information
+latest page agent
 human move 980,540
 human click 980,540
 human drag 780,420 to 1120,640
@@ -195,6 +218,13 @@ For `desktop_action_safe.py` and `human_input_ops.py`:
 
 ```text
 pip install pyautogui
+```
+
+For `page_agent_web.py`:
+
+```text
+pip install playwright
+python -m playwright install chromium
 ```
 
 If a dependency is missing, the script exits and writes guidance to run logs.
