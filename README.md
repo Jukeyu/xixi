@@ -91,12 +91,14 @@ screen intent coding
 watch screen behavior workflow
 latest screen intent
 latest screen behavior
+desktop status
 latest screen summary
 
 page agent inspect example.com
 page agent click example.com More information
 latest page agent
 
+right click 960,540
 human move 960,540
 human click 920,520
 human drag 760,420 to 1080,640
@@ -152,6 +154,7 @@ python -m playwright install chromium
 
 执行细则见：
 - `docs/copywriting-playbook.md`
+- `scripts/check-readme-sync.mjs`（CI 自动校验 README 是否与功能改动同步）
 
 ## 贡献方向（欢迎加入）
 
@@ -174,4 +177,3 @@ python -m playwright install chromium
 ## License
 
 See repository license and third-party dependency licenses before redistribution.
-

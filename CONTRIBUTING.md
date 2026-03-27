@@ -50,6 +50,7 @@ High-value contribution themes:
 
 For this project, each meaningful push should update the GitHub introduction page (`README.md`) together with code changes.
 Use `docs/copywriting-playbook.md` as the required checklist and style baseline.
+CI enforces this via `.github/workflows/ci.yml` + `scripts/check-readme-sync.mjs` for product-facing desktop changes.
 
 Before opening a PR, verify:
 

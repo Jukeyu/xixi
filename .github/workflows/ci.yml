@@ -7,7 +7,31 @@ on:
   pull_request:
 
 jobs:
+  readme-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enforce README sync for product changes
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "[readme-sync] base=${BASE_SHA}"
+          echo "[readme-sync] head=${HEAD_SHA}"
+          node scripts/check-readme-sync.mjs "${BASE_SHA}" "${HEAD_SHA}"
+
   desktop-smoke:
+    needs: readme-sync
     runs-on: windows-latest
     defaults:
       run:
